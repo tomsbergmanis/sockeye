@@ -126,6 +126,59 @@ class LossMetric(ABC):
         self._num_inst = 0.0
 
 
+class AlignmentCrossEntropyLoss(Loss):
+    def __init__(self, name: str = C.ALIGNMENT_CROSS_ENTROPY_LOSS,
+                 output_name: str = C.LOGITS_NAME,
+                 label_name: str = C.TARGET_LABEL_NAME,
+                 weight: float = 1.0,
+                 metric_prefix: str = ''):
+        super().__init__(name=name, output_name=output_name, label_name=label_name,
+                         weight=weight, metric_prefix=metric_prefix)
+
+
+    # def compute_alignment_weights(alignments):
+    #     """
+    #     Given a tensor of shape [:, 2] containing the source-target indices
+    #     corresponding to the alignments, a weight vector containing the
+    #     inverse frequency of each target index is computed.
+    #     For e.g. if alignments = [[5, 7], [2, 3], [1, 3], [4, 2]], then
+    #     a tensor containing [1., 0.5, 0.5, 1] should be returned (since target
+    #     index 3 is repeated twice)
+    #     """
+    #     align_tgt = alignments[:, 1]
+    #     _, align_tgt_i, align_tgt_c = pt.unique(
+    #         align_tgt, return_inverse=True, return_counts=True
+    #     )
+    #     align_weights = align_tgt_c[align_tgt_i[np.arange(len(align_tgt))]]
+    #     return 1.0 / align_weights.float()
+    def forward(self, attn: pt.Tensor, align: pt.Tensor) -> Tuple[pt.Tensor, pt.Tensor]:
+        """
+            logits here are assumed to be output of one attention layer with size (batch, target, source)
+            labels are alignments in s-t format
+        """
+        bsz, tgt_sz, src_sz = attn.shape
+        attn = attn.view(bsz * tgt_sz, src_sz)
+
+        # TODO ALIGNMENT WEIGHT 1 / tgd index frequency
+        # align_weights = sample["align_weights"].float()
+
+        # Alignment loss computation. align (shape [:, 2])
+        # contains the src-tgt index pairs corresponding to the alignments.
+        # align_weights (shape [:]) contains the 1 / frequency of a tgt index for normalizing.
+        loss = -(
+            (attn[align[:, 1][:, None], align[:, 0][:, None]]).log()
+            # TODO * align_weights[:, None]
+        ).sum()
+
+        return loss, pt.ones(1, device=align.device)
+
+    def create_metric(self) -> 'LossMetric':
+        """
+        Create an instance of the EvalMetric that corresponds to this Loss function.
+        """
+        return PerplexityMetric(prefix=self._metric_prefix)
+
+
 class CrossEntropyLoss(Loss):
     """
     Computes a cross-entropy loss, normalized by the number of valid (non-pad) tokens.
@@ -299,7 +352,7 @@ class BinaryCrossEntropyBowLoss(Loss):
         # convert it to the additional (therefore pos_weight-1) implied counts
         # and renormalize
         avg_pos_count = pt.mean(pt.sum(bow, dim=1).float())
-        implied_pos_count = avg_pos_count * (pos_weight-1)
+        implied_pos_count = avg_pos_count * (pos_weight - 1)
         scale = 1. / (self._num_labels + implied_pos_count)
 
         # shape: (batch_size, vocab_size)
@@ -394,4 +447,3 @@ class MSELoss(Loss):
 
     def create_metric(self) -> 'LossMetric':
         return LossMetric(name=C.LENRATIO_MSE)
-

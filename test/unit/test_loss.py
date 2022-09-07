@@ -65,6 +65,46 @@ def test_loss_metric():
     assert onp.isnan(metric.get())
 
 
+def test_alignment_loss():
+    b = sockeye.loss.AlignmentCrossEntropyLoss()
+    assert b.name == C.ALIGNMENT_CROSS_ENTROPY_LOSS
+    assert b.weight == 1.0
+    assert b.output_name == C.LOGITS_NAME
+    assert b.label_name == C.TARGET_LABEL_NAME
+
+    # shape: (batch, trg, src)
+    logits = pt.tensor([
+        [[1, 1, 1, 1, 1],
+         [1, 1, 1, 1, 1],
+         [1, 1, 1, 1, 1],
+         [1, 1, 1, 1, 1],
+         [1, 1, 1, 1, 1],
+         [1, 1, 1, 1, 1]]
+    ], dtype=pt.float32, requires_grad=True)
+    attention_probs = pt.nn.Softmax(dim=-1)(logits)
+
+    # 0-0 1-1 1-3 2-2 3-3 4-4 4-5
+    labels = pt.tensor([[0, 0], [1, 1], [1, 3], [2, 2], [3, 3], [4, 4], [4, 5]])
+
+    loss_value, loss_samples = b({C.LOGITS_NAME: attention_probs, 'other_stuff': None},
+                                 {C.TARGET_LABEL_NAME: labels, 'other_stuff': None})
+    loss_value.backward()
+    assert loss_samples.item() == 1  # this loss returns always 1
+
+    expected_logits_grad = pt.tensor(
+        [[[-1., 0., 0., 0., 0.],
+          [0., -1., 0., 0., 0.],
+          [0., 0., -1., 0., 0.],
+          [0., -1., 0., -1., 0.],
+          [0., 0., 0., 0., -1.],
+          [0., 0., 0., 0., -1.]]])
+
+    expected_loss_value = pt.tensor(-(math.log(1 / 4) * 3))  # 3 valid rows, all uniform, divided by num_valid
+
+    pt.testing.assert_allclose(loss_value, expected_loss_value)
+    pt.testing.assert_allclose(logits.grad, expected_logits_grad)
+
+
 def test_cross_entropy_loss():
     b = sockeye.loss.CrossEntropyLoss(ignore_label=C.PAD_ID, label_smoothing=0.0)
     assert b.ignore_label == C.PAD_ID
@@ -148,12 +188,11 @@ def test_binary_cross_entropy_loss():
     assert loss_samples.item() == 1  # this loss returns always 1
     expected_loss = -pt.log(pt.sigmoid(pt.tensor(1))) / vocab_size / batch_size
     pt.testing.assert_allclose(loss_value, expected_loss)
-    expected_grad = - 1/ (pt.exp(pt.tensor(1)) + 1)  / vocab_size / batch_size 
+    expected_grad = - 1 / (pt.exp(pt.tensor(1)) + 1) / vocab_size / batch_size
     pt.testing.assert_allclose(logits.grad,
-        pt.tensor([[0.0000, 0.0000, 0.0000, expected_grad],
-                   [0.0000, 0.0000, 0.0000, 0.0000]])
-    )
-
+                               pt.tensor([[0.0000, 0.0000, 0.0000, expected_grad],
+                                          [0.0000, 0.0000, 0.0000, 0.0000]])
+                               )
 
 
 def test_perplexity_metric():
