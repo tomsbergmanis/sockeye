@@ -129,7 +129,7 @@ class LossMetric(ABC):
 class AlignmentCrossEntropyLoss(Loss):
     def __init__(self, name: str = C.ALIGNMENT_CROSS_ENTROPY_LOSS,
                  output_name: str = C.LOGITS_NAME,
-                 label_name: str = C.TARGET_LABEL_NAME,
+                 label_name: str = C.ALIGNMENT_LABEL_NAME,
                  weight: float = 1.0,
                  metric_prefix: str = ''):
         super().__init__(name=name, output_name=output_name, label_name=label_name,

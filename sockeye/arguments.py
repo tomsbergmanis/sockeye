@@ -442,6 +442,21 @@ def add_training_data_args(params, required=False):
                         type=regular_file(),
                         help='Target side of parallel training data.')
 
+def add_guided_alignment_args(params, required=False):
+    params.add_argument('--guided-alignments',
+                        required=False,
+                        type=regular_file(),
+                        default=[],
+                        help='File containing src-trg token alignments to guide attention.')
+    params.add_argument('--transformer-guided-alignment-layer',
+                        required=False,
+                        default=1,
+                        help='Number of layer to use for guided alignment training in transformer.')
+    params.add_argument('--guided-alignment-weight',
+                       required = False,
+                       default = 0.1,
+                       help = 'Weight for guided alignment cost.')
+
 
 def add_validation_data_params(params):
     params.add_argument('--validation-source', '-vs',
@@ -494,6 +509,7 @@ def add_training_io_args(params):
     add_bucketing_args(params)
     add_vocab_args(params)
     add_training_output_args(params)
+    add_guided_alignment_args(params)
 
 
 def add_bucketing_args(params):

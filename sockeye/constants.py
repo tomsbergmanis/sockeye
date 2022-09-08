@@ -102,6 +102,7 @@ TRANSFORMER_ACTIVATION_TYPES = [RELU, SWISH1, GELU]
 # default I/O variable names
 TARGET_LABEL_NAME = "target_label"
 TARGET_FACTOR_LABEL_NAME = "target_factor%d_label"
+ALIGNMENT_LABEL_NAME = "alignment_label"
 LENRATIO_LABEL_NAME = "length_ratio_label"
 LENRATIO_NAME = "length_ratio"
 

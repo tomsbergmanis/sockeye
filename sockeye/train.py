@@ -709,6 +709,7 @@ def create_model_config(args: argparse.Namespace,
 
 def create_losses(args: argparse.Namespace, all_num_classes: List[int]) -> List[loss.Loss]:
     # loss weights per factor
+    # TODO: add alignment loss
     if len(args.target_factors_weight) != len(all_num_classes) - 1:
         check_condition(len(args.target_factors_weight) == 1,
                         "Must provide the same number of target factor weights as secondary target factors, or one.")
@@ -716,7 +717,6 @@ def create_losses(args: argparse.Namespace, all_num_classes: List[int]) -> List[
     else:
         factor_weights = args.target_factors_weight
     loss_weights = [1.0] + factor_weights
-
     losses = []  # type: List[loss.Loss]
 
     # Cross-Entropy losses for all target streams/factors
@@ -735,6 +735,7 @@ def create_losses(args: argparse.Namespace, all_num_classes: List[int]) -> List[
                                             label_name=label_name,
                                             metric_prefix=metric_prefix,
                                             label_smoothing_impl=args.label_smoothing_impl))
+
 
     if args.length_task is not None:
         weight = args.length_task_weight
@@ -758,7 +759,11 @@ def create_losses(args: argparse.Namespace, all_num_classes: List[int]) -> List[
                                                   label_name=C.TARGET_LABEL_NAME,
                                                   metric_prefix="bow")
         losses.append(bow_loss)
-
+    if args.guided_alignments:
+        guided_alignment_loss = loss.AlignmentCrossEntropyLoss(name="alignment_ce",
+                                                               output_name=C.ALIGNMENT_CROSS_ENTROPY_LOSS,
+                                                               weight=args.guided_alignment_weight)
+        losses.append(guided_alignment_loss)
     return losses
 
 
