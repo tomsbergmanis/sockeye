@@ -452,6 +452,10 @@ def add_guided_alignment_args(params, required=False):
                         required=False,
                         default=1,
                         help='Number of layer to use for guided alignment training in transformer.')
+    params.add_argument('--transformer-guided-alignment-head',
+                        required=False,
+                        default=1,
+                        help='Number of head to use for guided alignment training in transformer.')
     params.add_argument('--guided-alignment-weight',
                        required = False,
                        default = 0.1,
