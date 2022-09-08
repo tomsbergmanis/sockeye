@@ -244,7 +244,7 @@ class TransformerDecoder(Decoder):
         states += dummy_autoregr_states
         return states
 
-    def decode_seq(self, inputs: pt.Tensor, states: List[pt.Tensor]) -> pt.Tensor:
+    def decode_seq(self, inputs: pt.Tensor, states: List[pt.Tensor]) -> Tuple[pt.Tensor, List[pt.Tensor]]:
         """
         Decodes a sequence of embedded target words and returns sequence of last decoder
         representations for each time step.
@@ -253,8 +253,8 @@ class TransformerDecoder(Decoder):
         :param states: List of initial states, as given by init_state_from_encoder().
         :return: Decoder output. Shape: (batch_size, target_embed_max_length, decoder_depth).
         """
-        outputs, _ = self.forward(inputs, states)
-        return outputs
+        outputs, new_states = self.forward(inputs, states)
+        return outputs, new_states
 
     def forward(self, step_input: pt.Tensor, states: List[pt.Tensor]) -> Tuple[pt.Tensor, List[pt.Tensor]]:
         target_mask = None

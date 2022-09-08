@@ -461,23 +461,25 @@ class MultiHeadSelfAttention(MultiHeadAttentionBase, AutoregressiveLayer):
         """
         if self.training:  # use fused multi-head attention op during training
             assert not self.kv_interleaved
-            contexts, _ = F.multi_head_attention_forward(query=inputs, key=inputs, value=inputs,
-                                                         embed_dim_to_check=self.depth, num_heads=self.heads,
-                                                         in_proj_weight=self.ff_in.weight,
-                                                         in_proj_bias=None,
-                                                         bias_k=None, bias_v=None, add_zero_attn=False,
-                                                         dropout_p=self._drop_p,
-                                                         out_proj_weight=self.ff_out.weight,
-                                                         out_proj_bias=self.ff_out.bias,
-                                                         training=self.training,
-                                                         key_padding_mask=None,
-                                                         need_weights=False,
-                                                         attn_mask=mask,
-                                                         use_separate_proj_weight=False,
-                                                         q_proj_weight=None,
-                                                         k_proj_weight=None,
-                                                         v_proj_weight=None)
-            return contexts, contexts  # dummy return
+            contexts, attention_weights = F.multi_head_attention_forward(query=inputs, key=inputs, value=inputs,
+                                                                         embed_dim_to_check=self.depth,
+                                                                         num_heads=self.heads,
+                                                                         in_proj_weight=self.ff_in.weight,
+                                                                         in_proj_bias=None,
+                                                                         bias_k=None, bias_v=None, add_zero_attn=False,
+                                                                         dropout_p=self._drop_p,
+                                                                         out_proj_weight=self.ff_out.weight,
+                                                                         out_proj_bias=self.ff_out.bias,
+                                                                         training=self.training,
+                                                                         key_padding_mask=None,
+                                                                         need_weights=True,
+                                                                         attn_mask=mask,
+                                                                         use_separate_proj_weight=False,
+                                                                         q_proj_weight=None,
+                                                                         k_proj_weight=None,
+                                                                         v_proj_weight=None,
+                                                                         average_attn_weights=False)
+            return contexts, attention_weights  # dummy return
         else:  # during inference multi-head attention with interleaved key-value parameters is used
             proj = self.ff_in(inputs)
             queries, states = proj.split((self.depth_att, 2 * self.depth_att), dim=2)

@@ -107,6 +107,7 @@ LENRATIO_NAME = "length_ratio"
 
 LOGITS_NAME = "logits"
 FACTOR_LOGITS_NAME = "factor%d_logits"
+ATTENTION_NAME = "attention%d"
 
 NVS_PRED_NAME = "nvs_pred"
 
