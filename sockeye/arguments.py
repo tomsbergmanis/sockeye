@@ -451,15 +451,15 @@ def add_guided_alignment_args(params, required=False):
     params.add_argument('--transformer-guided-alignment-layer',
                         required=False,
                         default=1,
-                        help='Number of layer to use for guided alignment training in transformer.')
+                        help='Index of the layer to use for guided alignment training in transformer.')
     params.add_argument('--transformer-guided-alignment-head',
                         required=False,
                         default=1,
-                        help='Number of head to use for guided alignment training in transformer.')
+                        help='Index of the head to use for guided alignment training in transformer.')
     params.add_argument('--guided-alignment-weight',
-                       required = False,
-                       default = 0.1,
-                       help = 'Weight for guided alignment cost.')
+                        required=False,
+                        default=0.1,
+                        help='Weight for guided alignment cost.')
 
 
 def add_validation_data_params(params):

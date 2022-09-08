@@ -69,40 +69,52 @@ def test_alignment_loss():
     b = sockeye.loss.AlignmentCrossEntropyLoss()
     assert b.name == C.ALIGNMENT_CROSS_ENTROPY_LOSS
     assert b.weight == 1.0
-    assert b.output_name == C.LOGITS_NAME
-    assert b.label_name == C.TARGET_LABEL_NAME
+    assert b.output_name == C.ATTENTION_NAME % 1
+    assert b.label_name == C.ALIGNMENT_LABEL_NAME
+    assert b.head == 1
 
-    # shape: (batch, trg, src)
-    logits = pt.tensor([
-        [[1, 1, 1, 1, 1],
-         [1, 1, 1, 1, 1],
-         [1, 1, 1, 1, 1],
-         [1, 1, 1, 1, 1],
-         [1, 1, 1, 1, 1],
-         [1, 1, 1, 1, 1]]
+    # shape: (batch, head, trg, src)
+    attention = pt.tensor([
+        [
+            # 0 attention head
+            [[0, 0, 0, 0, 1],
+             [0, 0, 0, 0, 1],
+             [0, 0, 0, 0, 1],
+             [0, 0, 0, 0, 1],
+             [0, 0, 0, 0, 1],
+             [0, 0, 0, 0, 1]],
+            # 1 attention head
+            [[1, 1, 1, 1, 1],
+             [1, 1, 1, 1, 1],
+             [1, 1, 1, 1, 1],
+             [1, 1, 1, 1, 1],
+             [1, 1, 1, 1, 1],
+             [1, 1, 1, 1, 1]]
+        ]
+
     ], dtype=pt.float32, requires_grad=True)
-    attention_probs = pt.nn.Softmax(dim=-1)(logits)
+    attention_probs = pt.nn.Softmax(dim=-1)(attention)
 
     # 0-0 1-1 1-3 2-2 3-3 4-4 4-5
     labels = pt.tensor([[0, 0], [1, 1], [1, 3], [2, 2], [3, 3], [4, 4], [4, 5]])
 
-    loss_value, loss_samples = b({C.LOGITS_NAME: attention_probs, 'other_stuff': None},
-                                 {C.TARGET_LABEL_NAME: labels, 'other_stuff': None})
+    loss_value, loss_samples = b({C.ATTENTION_NAME % 1: attention_probs, 'other_stuff': None},
+                                 {C.ALIGNMENT_LABEL_NAME: labels, 'other_stuff': None})
     loss_value.backward()
     assert loss_samples.item() == 1  # this loss returns always 1
 
-    expected_logits_grad = pt.tensor(
-        [[[-1., 0., 0., 0., 0.],
-          [0., -1., 0., 0., 0.],
-          [0., 0., -1., 0., 0.],
-          [0., -1., 0., -1., 0.],
-          [0., 0., 0., 0., -1.],
-          [0., 0., 0., 0., -1.]]])
+    expected_logits_grad_head = pt.tensor(
+        [[-0.8000, 0.2000, 0.2000, 0.2000, 0.2000],
+         [0.2000, -0.8000, 0.2000, 0.2000, 0.2000],
+         [0.2000, 0.2000, -0.8000, 0.2000, 0.2000],
+         [0.4000, -0.6000, 0.4000, -0.6000, 0.4000],
+         [0.2000, 0.2000, 0.2000, 0.2000, -0.8000],
+         [0.2000, 0.2000, 0.2000, 0.2000, -0.8000]])
 
-    expected_loss_value = pt.tensor(-(math.log(1 / 4) * 3))  # 3 valid rows, all uniform, divided by num_valid
+    expected_loss_value = pt.tensor(-(math.log(1 / 5) * 7))  # 4 rows, all uniform, divided by num of alignments
 
     pt.testing.assert_allclose(loss_value, expected_loss_value)
-    pt.testing.assert_allclose(logits.grad, expected_logits_grad)
+    pt.testing.assert_allclose(attention.grad[0][1], expected_logits_grad_head)
 
 
 def test_cross_entropy_loss():

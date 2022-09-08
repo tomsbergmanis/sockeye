@@ -322,7 +322,7 @@ class SockeyeModel(pt.nn.Module):
 
         forward_output[C.LOGITS_NAME] = self.output_layer(target, None)
 
-        for i, attention in enumerate(new_states[-self.config.config_decoder.num_layers], 1):
+        for i, attention in enumerate(new_states[-self.config.config_decoder.num_layers]):
             forward_output[C.ATTENTION_NAME % i] = attention
 
         for i, factor_output_layer in enumerate(self.factor_output_layers, 1):

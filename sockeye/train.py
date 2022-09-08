@@ -709,7 +709,6 @@ def create_model_config(args: argparse.Namespace,
 
 def create_losses(args: argparse.Namespace, all_num_classes: List[int]) -> List[loss.Loss]:
     # loss weights per factor
-    # TODO: add alignment loss
     if len(args.target_factors_weight) != len(all_num_classes) - 1:
         check_condition(len(args.target_factors_weight) == 1,
                         "Must provide the same number of target factor weights as secondary target factors, or one.")
@@ -761,8 +760,10 @@ def create_losses(args: argparse.Namespace, all_num_classes: List[int]) -> List[
         losses.append(bow_loss)
     if args.guided_alignments:
         guided_alignment_loss = loss.AlignmentCrossEntropyLoss(name="alignment_ce",
-                                                               output_name=C.ALIGNMENT_CROSS_ENTROPY_LOSS,
-                                                               weight=args.guided_alignment_weight)
+                                                               output_name=C.ATTENTION_NAME % args.transformer_guided_alignment_layer,
+                                                               head=args.transformer_guided_alignment_head,
+                                                               weight=args.guided_alignment_weight,
+                                                               label_name=C.ALIGNMENT_LABEL_NAME)
         losses.append(guided_alignment_loss)
     return losses
 
