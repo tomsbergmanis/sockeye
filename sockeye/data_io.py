@@ -452,7 +452,10 @@ class RawParallelDatasetLoader:
                        for (source_len, _), num_samples in zip(self.buckets, num_samples_per_bucket)]
         data_target = [np.full((num_samples, target_len + 1, num_target_factors), self.pad_id, dtype=self.dtype)
                        for (_, target_len), num_samples in zip(self.buckets, num_samples_per_bucket)]
-        data_alignment = []
+        data_alignment = None
+        if guided_alignment_iterable is not None:
+            data_alignment = [[None for _ in range(num_samples)] for num_samples in num_samples_per_bucket]
+
         bucket_sample_index = [0 for _ in self.buckets]
 
         # track amount of padding introduced through bucketing
@@ -462,7 +465,7 @@ class RawParallelDatasetLoader:
         num_pad_target = 0
 
         # Bucket sentences as padded np arrays
-        for sources, targets, alignments in parallel_iter(source_iterables, target_iterables, skip_blanks=self.skip_blanks):
+        for sources, targets, alignments in parallel_iter(source_iterables, target_iterables, skip_blanks=self.skip_blanks, guided_alignment_iterable=guided_alignment_iterable):
             sources = [[] if stream is None else stream for stream in sources]
             targets = [[] if stream is None else stream for stream in targets]
             source_len = len(sources[0])
@@ -492,18 +495,22 @@ class RawParallelDatasetLoader:
                     # sequence: <BOS> <BOS> ...
                     t.insert(0, C.BOS_ID)
                     data_target[buck_index][sample_index, 0:target_len + 1, i] = t
-
+            if guided_alignment_iterable is not None:
+                data_alignment[buck_index][sample_index] = np.array(list(alignments))
             bucket_sample_index[buck_index] += 1
 
         data_source_tensors = [torch.from_numpy(data) for data in data_source]
         data_target_tensors = [torch.from_numpy(data) for data in data_target]
+        data_alignment_tensors = None
+        if guided_alignment_iterable is not None:
+            data_alignment_tensors = [[torch.from_numpy(alignment) for alignment in bucket]  for bucket in data_alignment]
 
         if num_tokens_source > 0 and num_tokens_target > 0:
             logger.info("Created bucketed parallel data set. Introduced padding: source=%.1f%% target=%.1f%%)",
                         num_pad_source / num_tokens_source * 100,
                         num_pad_target / num_tokens_target * 100)
 
-        return ParallelDataSet(data_source_tensors, data_target_tensors)
+        return ParallelDataSet(data_source_tensors, data_target_tensors, data_alignment_tensors)
 
 
 def get_num_shards(num_samples: int, samples_per_shard: int, min_num_shards: int) -> int:
