@@ -403,11 +403,10 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
         check_condition(len(targets) == len(validation_targets),
                         'Training and validation data must have the same number of target factors, '
                         'but found %d and %d.' % (len(source_vocabs), len(validation_sources)))
-        guided_alignments = args['guided_alignments'] if 'guided_alignments' in args else None
+
         train_iter, validation_iter, config_data, data_info = data_io.get_training_data_iters(
             sources=sources,
             targets=targets,
-            alignments=guided_alignments,
             validation_sources=validation_sources,
             validation_targets=validation_targets,
             source_vocabs=source_vocabs,
@@ -422,7 +421,8 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
             bucketing=not args.no_bucketing,
             bucket_width=args.bucket_width,
             bucket_scaling=args.bucket_scaling,
-            batch_sentences_multiple_of=args.batch_sentences_multiple_of)
+            batch_sentences_multiple_of=args.batch_sentences_multiple_of,
+            guided_alignments=args.guided_alignments)
 
         data_info_fname = os.path.join(output_folder, C.DATA_INFO)
         logger.info("Writing data config to '%s'", data_info_fname)

@@ -214,7 +214,7 @@ def calculate_length_statistics(source_iterables: Sequence[Iterable[Any]],
     """
     mean_and_variance = OnlineMeanAndVariance()
 
-    for sources, targets in parallel_iter(source_iterables, target_iterables):
+    for sources, targets, _ in parallel_iter(source_iterables, target_iterables):
         source_len = len(sources[0])
         target_len = len(targets[0])
         if source_len > max_seq_len_source or target_len > max_seq_len_target:
@@ -232,7 +232,7 @@ def analyze_sequence_lengths(sources: List[str],
                              vocab_targets: List[vocab.Vocab],
                              max_seq_len_source: int,
                              max_seq_len_target: int) -> 'LengthStatistics':
-    train_sources_sentences, train_targets_sentences = create_sequence_readers(sources, targets,
+    train_sources_sentences, train_targets_sentences, _ = create_sequence_readers(sources, targets,
                                                                                vocab_sources, vocab_targets)
 
     length_statistics = calculate_length_statistics(train_sources_sentences, train_targets_sentences,
@@ -441,7 +441,8 @@ class RawParallelDatasetLoader:
     def load(self,
              source_iterables: Sequence[Iterable],
              target_iterables: Sequence[Iterable],
-             num_samples_per_bucket: List[int]) -> 'ParallelDataSet':
+             num_samples_per_bucket: List[int],
+             guided_alignment_iterable: Optional[Iterable]) -> 'ParallelDataSet':
 
         assert len(num_samples_per_bucket) == len(self.buckets)
         num_source_factors = len(source_iterables)
@@ -550,9 +551,12 @@ def save_shard(shard_idx: int,
     # Compute shard statistics and bucketing
     shard_stat_accumulator = DataStatisticsAccumulator(buckets, source_vocabs[0], target_vocabs[0],
                                                        length_ratio_mean, length_ratio_std)
-
+    # TODO: add guided_alignment handling
     # Shards contain the raw sentences. Need to map to integers using the vocabs and add BOS/EOS
-    sources_sentences, targets_sentences = create_sequence_readers(shard_sources, shard_targets, source_vocabs, target_vocabs)
+    sources_sentences, targets_sentences, sentence_guided_alignments = create_sequence_readers(shard_sources,
+                                                                                               shard_targets,
+                                                                                               source_vocabs,
+                                                                                               target_vocabs)
 
     for sources, targets in parallel_iter(sources_sentences, targets_sentences):
         source_len = len(sources[0])
@@ -715,7 +719,7 @@ def get_data_statistics(source_readers: Optional[Sequence[Iterable]],
                                                        length_ratio_std)
 
     if source_readers is not None:
-        for sources, targets in parallel_iter(source_readers, target_readers):
+        for sources, targets, _ in parallel_iter(source_readers, target_readers):
             buck_idx, _ = get_parallel_bucket(buckets, len(sources[0]), len(targets[0]))
             data_stats_accumulator.sequence_pair(sources[0], targets[0], buck_idx)
     else:  # Allow stats for target only data
@@ -869,7 +873,6 @@ def get_prepared_data_iters(prepared_data_dir: str,
 
 def get_training_data_iters(sources: List[str],
                             targets: List[str],
-                            guided_alignments: Optional[str],
                             validation_sources: List[str],
                             validation_targets: List[str],
                             source_vocabs: List[vocab.Vocab],
@@ -886,7 +889,8 @@ def get_training_data_iters(sources: List[str],
                             bucket_scaling: bool = True,
                             allow_empty: bool = False,
                             batch_sentences_multiple_of: int = 1,
-                            permute: bool = True) -> Tuple['BaseParallelSampleIter', Optional['BaseParallelSampleIter'],
+                            permute: bool = True,
+                            guided_alignments: Optional[str] = None) -> Tuple['BaseParallelSampleIter', Optional['BaseParallelSampleIter'],
                                                            'DataConfig', 'DataInfo']:
     """
     Returns data iterators for training and validation data.
@@ -932,7 +936,7 @@ def get_training_data_iters(sources: List[str],
                                       length_statistics.length_ratio_mean) if bucketing else [(max_seq_len_source,
                                                                                                max_seq_len_target)]
 
-    sources_sentences, targets_sentences = create_sequence_readers(sources, targets, source_vocabs, target_vocabs)
+    sources_sentences, targets_sentences, sentence_guided_alignments = create_sequence_readers(sources, targets, source_vocabs, target_vocabs)
 
     # Pass 2: Get data statistics and determine the number of data points for each bucket.
     data_statistics = get_data_statistics(sources_sentences, targets_sentences, buckets,
@@ -953,7 +957,8 @@ def get_training_data_iters(sources: List[str],
                                            pad_id=C.PAD_ID)
 
     training_data = data_loader.load(sources_sentences, targets_sentences,
-                                     data_statistics.num_sents_per_bucket).fill_up(bucket_batch_sizes)
+                                     data_statistics.num_sents_per_bucket, sentence_guided_alignments
+                                     ).fill_up(bucket_batch_sizes)
 
     data_info = DataInfo(sources=sources,
                          targets=targets,
@@ -1240,7 +1245,7 @@ def create_sequence_readers(sources: List[str], targets: List[str],
                             vocab_sources: List[vocab.Vocab],
                             vocab_targets: List[vocab.Vocab],
                             guided_alignments: Optional[str] = None) \
-        -> Tuple[List[SequenceReader], List[SequenceReader]]:
+        -> Tuple[List[SequenceReader], List[SequenceReader], SequenceReader]:
     """
     Create source readers with EOS and target readers with BOS.
 
@@ -1255,21 +1260,24 @@ def create_sequence_readers(sources: List[str], targets: List[str],
                                 zip(sources, vocab_sources)]
     target_sequence_readers = [SequenceReader(target, vocab, add_bos=True) for target, vocab in
                                 zip(targets, vocab_targets)]
+    guided_alignment_reader = None
     if guided_alignments is not None:
         guided_alignment_reader = GuidedAlignmentReader(guided_alignments)
-        target_sequence_readers.append(guided_alignment_reader)
-    return source_sequence_readers, target_sequence_readers
+
+    return source_sequence_readers, target_sequence_readers, guided_alignment_reader
 
 
 def parallel_iter(source_iterables: Sequence[Iterable[Optional[Any]]],
                   target_iterables: Sequence[Iterable[Optional[Any]]],
                   skip_blanks: bool = True,
-                  check_token_parallel: bool = True):
+                  check_token_parallel: bool = True,
+                  guided_alignment_iterable: Optional[Iterable] = None):
     """
     Creates iterators over parallel iterables by calling iter() on the iterables
     and chaining to parallel_iterate(). The purpose of the separation is to allow
     the caller to save iterator state between calls, if desired.
 
+    :param guided_alignment_iterable: Guided alignment iterable.
     :param source_iterables: A list of source iterables.
     :param target_iterables: A target iterable.
     :param skip_blanks: Whether to skip empty target lines.
@@ -1278,13 +1286,19 @@ def parallel_iter(source_iterables: Sequence[Iterable[Optional[Any]]],
     """
     source_iterators = [iter(s) for s in source_iterables]
     target_iterators = [iter(t) for t in target_iterables]
-    return parallel_iterate(source_iterators, target_iterators, skip_blanks, check_token_parallel)
+
+    guided_alignment_iterator = None
+    if guided_alignment_iterable is not None:
+        guided_alignment_iterator = iter(guided_alignment_iterable)
+    return parallel_iterate(source_iterators, target_iterators, skip_blanks, check_token_parallel,
+                            guided_alignment_iterator)
 
 
 def parallel_iterate(source_iterators: Sequence[Iterator[Optional[Any]]],
                      target_iterators: Sequence[Iterator[Optional[Any]]],
                      skip_blanks: bool = True,
-                     check_token_parallel: bool = True):
+                     check_token_parallel: bool = True,
+                     guided_alignment_iterator: Optional[Iterator] = None):
     """
     Yields parallel source(s), target sequences from iterables.
     Checks for token parallelism in source sequences.
@@ -1292,6 +1306,7 @@ def parallel_iterate(source_iterators: Sequence[Iterator[Optional[Any]]],
     Checks that all iterables have the same number of elements.
     Can optionally continue from an already-begun iterator.
 
+    :param guided_alignment_iterator: An optional guided alignment iterator.
     :param source_iterators: A list of source iterators.
     :param target_iterators: A list of source iterators.
     :param skip_blanks: Whether to skip empty target lines.
@@ -1303,6 +1318,9 @@ def parallel_iterate(source_iterators: Sequence[Iterator[Optional[Any]]],
         try:
             sources = [next(source_iter) for source_iter in source_iterators]
             targets = [next(target_iter) for target_iter in target_iterators]
+            guided_alignment = None
+            if guided_alignment_iterator is not None:
+                guided_alignment = next(guided_alignment_iterator)
         except StopIteration:
             break
         if skip_blanks and (any((s is None for s in sources)) or any((t is None for t in targets))):
@@ -1313,14 +1331,16 @@ def parallel_iterate(source_iterators: Sequence[Iterator[Optional[Any]]],
                             "Source sequences are not token-parallel: %s" % (str(sources)))
             check_condition(are_none(targets) or are_token_parallel(targets),
                             "Target sequences are not token-parallel: %s" % (str(targets)))
-        yield sources, targets
+        yield sources, targets, guided_alignment
 
     if num_skipped > 0:
         logger.warning("Parallel reading of sequences skipped %d elements", num_skipped)
 
     check_condition(
         all(next(cast(Iterator, s), None) is None for s in source_iterators) and \
-        all(next(cast(Iterator, t), None) is None for t in target_iterators),
+        all(next(cast(Iterator, t), None) is None for t in target_iterators) and \
+        ((guided_alignment_iterator is None) or
+         next(cast(Iterator, guided_alignment_iterator), None) is None),
         "Different number of lines in source(s) and target(s) iterables.")
 
 
