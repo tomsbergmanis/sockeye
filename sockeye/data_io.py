@@ -452,7 +452,7 @@ class RawParallelDatasetLoader:
                        for (source_len, _), num_samples in zip(self.buckets, num_samples_per_bucket)]
         data_target = [np.full((num_samples, target_len + 1, num_target_factors), self.pad_id, dtype=self.dtype)
                        for (_, target_len), num_samples in zip(self.buckets, num_samples_per_bucket)]
-
+        data_alignment = []
         bucket_sample_index = [0 for _ in self.buckets]
 
         # track amount of padding introduced through bucketing
@@ -462,7 +462,7 @@ class RawParallelDatasetLoader:
         num_pad_target = 0
 
         # Bucket sentences as padded np arrays
-        for sources, targets in parallel_iter(source_iterables, target_iterables, skip_blanks=self.skip_blanks):
+        for sources, targets, alignments in parallel_iter(source_iterables, target_iterables, skip_blanks=self.skip_blanks):
             sources = [[] if stream is None else stream for stream in sources]
             targets = [[] if stream is None else stream for stream in targets]
             source_len = len(sources[0])
@@ -936,7 +936,10 @@ def get_training_data_iters(sources: List[str],
                                       length_statistics.length_ratio_mean) if bucketing else [(max_seq_len_source,
                                                                                                max_seq_len_target)]
 
-    sources_sentences, targets_sentences, sentence_guided_alignments = create_sequence_readers(sources, targets, source_vocabs, target_vocabs)
+    sources_sentences, targets_sentences, sentence_guided_alignments = create_sequence_readers(sources, targets,
+                                                                                               source_vocabs,
+                                                                                               target_vocabs,
+                                                                                               guided_alignments)
 
     # Pass 2: Get data statistics and determine the number of data points for each bucket.
     data_statistics = get_data_statistics(sources_sentences, targets_sentences, buckets,
@@ -1232,7 +1235,7 @@ class SequenceReader:
             yield sequence
 
 class GuidedAlignmentReader(SequenceReader):
-    def __init__(self, path: str, limit: Optional[int]) -> None:
+    def __init__(self, path: str, limit: Optional[int] = None) -> None:
         super().__init__(path, None, False, False, limit)
     def __iter__(self):
         for alignments in read_content(self.path, self.limit):
