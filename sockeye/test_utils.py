@@ -123,6 +123,24 @@ def generate_odd_even_factors(input_path: str, output_path: str):
             factors = ("e" if digit % 2 == 0 else "o" for digit in digits)
             print(C.TOKEN_SEPARATOR.join(factors), file=fout)
 
+def generate_alignments(train_source_path: str, train_target_path: str, train_alignment_path: str):
+    with open(train_source_path, 'r') as src_fin, open(train_target_path, 'r') as trg_fin, \
+            open(train_alignment_path, 'w') as align_fout:
+        for src_line, trg_line in zip(src_fin, trg_fin):
+            src_line = src_line.strip().split()
+            trg_line = trg_line.strip().split()
+            src_len = len(src_line)
+            trg_len = len(trg_line)
+            avg_len = (src_len + trg_len) // 2
+            num_alignments = random.randint(avg_len // 2, 2 * avg_len)
+            src_indices = random.choices(range(0, max(0, src_len)), k=num_alignments)
+            trg_indices = random.choices(range(0, max(0, trg_len)), k=num_alignments)
+            alignment_line = " ".join([
+                "{}-{}".format(src, tgt)
+                 for src, tgt in zip(src_indices, trg_indices)
+                 ]
+            )
+            align_fout.write(f'{alignment_line}\n')
 
 def generate_fast_align_lex(lex_path: str):
     """
@@ -146,7 +164,8 @@ def tmp_digits_dataset(prefix: str,
                        sort_target: bool = False,
                        seed_train: int = 13, seed_dev: int = 13,
                        with_n_source_factors: int = 0,
-                       with_n_target_factors: int = 0) -> Dict[str, Any]:
+                       with_n_target_factors: int = 0,
+                       with_guided_alignments: bool = False) -> Dict[str, Any]:
     """
     Creates a temporary dataset with train, dev, and test. Returns a dictionary with paths to the respective temporary
     files.
@@ -205,10 +224,16 @@ def tmp_digits_dataset(prefix: str,
                 data['dev_target_factors'].append(dev_factor_path)
                 data['test_target_factors'].append(test_factor_path)
 
+        if with_guided_alignments:
+            guided_alignment_path = os.path.join(work_dir, "train.align")
+            generate_alignments(train_source_path, train_target_path, guided_alignment_path)
+            data['guided_alignments'] = guided_alignment_path
+
         source_factors_path = None if 'test_source_factors' not in data else data['test_source_factors']
         target_factors_path = None if 'test_target_factors' not in data else data['test_target_factors']
         generate_json_input_file_with_tgt_prefix(test_source_path, test_target_path, test_source_with_target_prefix_path, \
             source_factors_path, target_factors_path)
+
         yield data
 
 
@@ -220,6 +245,7 @@ PREPARE_DATA_COMMON = " --max-seq-len {max_len} --source {train_source} --target
                        " --output {output} --pad-vocab-to-multiple-of 16"
 
 TRAIN_WITH_SOURCE_FACTORS_COMMON = " --source-factors {source_factors}"
+TRAIN_WITH_ALIGNMENTS = " --guided-alignments {guided_alignments} "
 DEV_WITH_SOURCE_FACTORS_COMMON = " --validation-source-factors {dev_source_factors}"
 TRAIN_WITH_TARGET_FACTORS_COMMON = " --target-factors {target_factors}"
 DEV_WITH_TARGET_FACTORS_COMMON = " --validation-target-factors {dev_target_factors}"
@@ -322,7 +348,8 @@ def run_train_translate(train_params: str,
             params += DEV_WITH_SOURCE_FACTORS_COMMON.format(dev_source_factors=" ".join(data['dev_source_factors']))
         if 'dev_target_factors' in data:
             params += DEV_WITH_TARGET_FACTORS_COMMON.format(dev_target_factors=" ".join(data['dev_target_factors']))
-
+        if 'guided_alignments' in data:
+            params += TRAIN_WITH_ALIGNMENTS.format(guided_alignments=data['guided_alignments'])
         logger.info("Starting training with parameters %s.", train_params)
         with patch.object(sys, "argv", params.split()):
             sockeye.train.main()

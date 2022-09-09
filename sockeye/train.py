@@ -396,6 +396,7 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
         targets = [args.target] + args.target_factors
         targets = [str(os.path.abspath(t)) for t in targets]
 
+
         check_condition(len(sources) == len(validation_sources),
                         'Training and validation data must have the same number of source factors, '
                         'but found %d and %d.' % (len(source_vocabs), len(validation_sources)))
@@ -420,7 +421,8 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
             bucketing=not args.no_bucketing,
             bucket_width=args.bucket_width,
             bucket_scaling=args.bucket_scaling,
-            batch_sentences_multiple_of=args.batch_sentences_multiple_of)
+            batch_sentences_multiple_of=args.batch_sentences_multiple_of,
+            guided_alignments=args.guided_alignments)
 
         data_info_fname = os.path.join(output_folder, C.DATA_INFO)
         logger.info("Writing data config to '%s'", data_info_fname)

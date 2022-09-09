@@ -155,6 +155,69 @@ def test_seq_copy(name, train_params, translate_params, use_prepared_data, perpl
             assert bleu_restrict >= bleu_thresh
 
 
+COPY_WITH_GUIDED_ALIGNMENTS_CASES = [
+    ("Copy:transformer:transformer-with-alignments",
+     "--encoder transformer --decoder transformer"
+     " --max-updates 4000"
+     " --num-layers 2 --transformer-attention-heads 4 --transformer-model-size 32"
+     " --transformer-feed-forward-num-hidden 64 --num-embed 32"
+     " --batch-size 16 --batch-type sentence" + COMMON_TRAINING_PARAMS,
+     "--beam-size 1 --prevent-unk",
+     False,
+     1.02,
+     0.98)
+]
+@pytest.mark.parametrize("name, train_params, translate_params, use_prepared_data, "
+                         "perplexity_thresh, bleu_thresh", COPY_WITH_GUIDED_ALIGNMENTS_CASES)
+def test_seq_copy_with_guided_alignments(name, train_params, translate_params, use_prepared_data, perplexity_thresh,
+                                         bleu_thresh):
+    """Task: copy short sequences of digits and learn guided alignments"""
+    with tmp_digits_dataset(prefix="test_seq_copy_with_guided_alignments",
+                            train_line_count=_TRAIN_LINE_COUNT,
+                            train_line_count_empty=_TRAIN_LINE_COUNT_EMPTY,
+                            train_max_length=_LINE_MAX_LENGTH,
+                            dev_line_count=_DEV_LINE_COUNT,
+                            dev_max_length=_LINE_MAX_LENGTH,
+                            test_line_count=_TEST_LINE_COUNT,
+                            test_line_count_empty=_TEST_LINE_COUNT_EMPTY,
+                            test_max_length=_TEST_MAX_LENGTH,
+                            sort_target=False,
+                            with_n_source_factors=0,
+                            with_guided_alignments=True) as data:
+        data = check_train_translate(train_params=train_params,
+                                     translate_params=translate_params,
+                                     data=data,
+                                     use_prepared_data=False,
+                                     max_seq_len=_LINE_MAX_LENGTH,
+                                     compare_output=True,
+                                     seed=seed)
+
+        # get best validation perplexity
+        metrics = sockeye.utils.read_metrics_file(os.path.join(data['model'], C.METRICS_NAME))
+        perplexity = min(m[C.PERPLEXITY + '-val'] for m in metrics)
+
+        # compute metrics
+        hypotheses = [json['translation'] for json in data['test_outputs']]
+        bleu = sockeye.evaluate.raw_corpus_bleu(hypotheses=hypotheses, references=data['test_targets'])
+        chrf = sockeye.evaluate.raw_corpus_chrf(hypotheses=hypotheses, references=data['test_targets'])
+        if 'test_outputs_restricted' in data:
+            hypotheses_restricted = [json['translation'] for json in data['test_outputs_restricted']]
+            bleu_restrict = sockeye.evaluate.raw_corpus_bleu(hypotheses=hypotheses_restricted,
+                                                            references=data['test_targets'])
+        else:
+            bleu_restrict = None
+
+        logger.info("================")
+        logger.info("test results: %s", name)
+        logger.info("perplexity=%f, bleu=%f, bleu_restrict=%f chrf=%f", perplexity, bleu, bleu_restrict, chrf)
+        logger.info("================\n")
+
+        assert perplexity <= perplexity_thresh
+        assert bleu >= bleu_thresh
+        if bleu_restrict is not None:
+            assert bleu_restrict >= bleu_thresh
+
+
 SORT_CASES = [
     ("Sort:transformer:transformer:batch_word",
      "--encoder transformer --decoder transformer"
@@ -192,7 +255,6 @@ SORT_CASES = [
      1.03,
      0.97)
 ]
-
 
 @pytest.mark.parametrize("name, train_params, translate_params, use_prepared_data, n_source_factors, "
                          "n_target_factors, perplexity_thresh, bleu_thresh", SORT_CASES)
