@@ -595,7 +595,8 @@ def prepare_data(source_fnames: List[str],
                  pool: multiprocessing.pool.Pool = None,
                  shards: List[Tuple[Tuple[str, ...], Tuple[str, ...]]] = None):
     """
-    :param shards: List of num_shards shards of parallel source and target tuples which in turn contain tuples to shard data factor file paths.
+    :param shards: List of num_shards shards of parallel source and target tuples which in turn contain tuples to shard
+    data factor file paths.
     """
     logger.info("Preparing data.")
     # write vocabularies to data folder
@@ -868,6 +869,7 @@ def get_prepared_data_iters(prepared_data_dir: str,
 
 def get_training_data_iters(sources: List[str],
                             targets: List[str],
+                            guided_alignments: Optional[str],
                             validation_sources: List[str],
                             validation_targets: List[str],
                             source_vocabs: List[vocab.Vocab],
@@ -891,6 +893,7 @@ def get_training_data_iters(sources: List[str],
 
     :param sources: Path to source training data (with optional factor data paths).
     :param targets: Path to target training data (with optional factor data paths).
+    :param guided_alignments: Path to guided alignment training data
     :param validation_sources: Path to source validation data (with optional factor data paths).
     :param validation_targets: Path to target validation data (with optional factor data paths).
     :param source_vocabs: Source vocabulary and optional factor vocabularies.
@@ -1188,7 +1191,6 @@ class SequenceReader:
     :param add_bos: Whether to add Beginning-Of-Sentence (BOS) symbol.
     :param limit: Read limit.
     """
-
     def __init__(self,
                  path: str,
                  vocabulary: Optional[vocab.Vocab] = None,
@@ -1224,10 +1226,21 @@ class SequenceReader:
                 sequence.append(self.eos_id)
             yield sequence
 
+class GuidedAlignmentReader(SequenceReader):
+    def __init__(self, path: str, limit: Optional[int]) -> None:
+        super().__init__(path, None, False, False, limit)
+    def __iter__(self):
+        for alignments in read_content(self.path, self.limit):
+            def transform(align : str) -> List[int]:
+                src, trg = align.split('-')
+                return [int(src), int(trg)]
+            yield map(transform, alignments)
 
 def create_sequence_readers(sources: List[str], targets: List[str],
                             vocab_sources: List[vocab.Vocab],
-                            vocab_targets: List[vocab.Vocab]) -> Tuple[List[SequenceReader], List[SequenceReader]]:
+                            vocab_targets: List[vocab.Vocab],
+                            guided_alignments: Optional[str] = None) \
+        -> Tuple[List[SequenceReader], List[SequenceReader]]:
     """
     Create source readers with EOS and target readers with BOS.
 
@@ -1235,12 +1248,16 @@ def create_sequence_readers(sources: List[str], targets: List[str],
     :param targets: The file name of the target data and factors.
     :param vocab_sources: The source vocabularies.
     :param vocab_targets: The target vocabularies.
+    :param guided_alignments: The file name of guided_alignments.
     :return: The source sequence readers and the target reader.
     """
     source_sequence_readers = [SequenceReader(source, vocab, add_eos=True) for source, vocab in
                                 zip(sources, vocab_sources)]
     target_sequence_readers = [SequenceReader(target, vocab, add_bos=True) for target, vocab in
                                 zip(targets, vocab_targets)]
+    if guided_alignments is not None:
+        guided_alignment_reader = GuidedAlignmentReader(guided_alignments)
+        target_sequence_readers.append(guided_alignment_reader)
     return source_sequence_readers, target_sequence_readers
 
 

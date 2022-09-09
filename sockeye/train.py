@@ -396,16 +396,18 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
         targets = [args.target] + args.target_factors
         targets = [str(os.path.abspath(t)) for t in targets]
 
+
         check_condition(len(sources) == len(validation_sources),
                         'Training and validation data must have the same number of source factors, '
                         'but found %d and %d.' % (len(source_vocabs), len(validation_sources)))
         check_condition(len(targets) == len(validation_targets),
                         'Training and validation data must have the same number of target factors, '
                         'but found %d and %d.' % (len(source_vocabs), len(validation_sources)))
-
+        guided_alignments = args['guided_alignments'] if 'guided_alignments' in args else None
         train_iter, validation_iter, config_data, data_info = data_io.get_training_data_iters(
             sources=sources,
             targets=targets,
+            alignments=guided_alignments,
             validation_sources=validation_sources,
             validation_targets=validation_targets,
             source_vocabs=source_vocabs,
