@@ -1277,16 +1277,33 @@ class SequenceReader:
                 sequence.append(self.eos_id)
             yield sequence
 
+class AlignmentReader:
+    """
+    Reads JSON alignment lines from path and creates sequence of integer [src,trg] pairs.
+    Streams from disk, instead of loading all samples into memory.
+    Empty sequences are yielded as None.
 
-class AlignmentReader(SequenceReader):
-    def __init__(self, path: str, limit: Optional[int] = None) -> None:
-        super().__init__(path, None, False, False, limit)
+    :param path: Path to read JSON alignment from.
+    :param vocabulary: Mapping from strings to integer ids.
+    :param limit: Read limit.
+    """
+
+    def __init__(self,
+                 path: str,
+                 limit: Optional[int] = None) -> None:
+        self.path = path
+        self.limit = limit
+
     def __iter__(self):
-        for alignments in read_content(self.path, self.limit):
-            def transform(align : str) -> List[int]:
-                src, trg = align.split('-')
-                return [int(src), int(trg)]
-            yield map(transform, alignments)
+        with smart_open(self.path) as indata:
+            for i, alignments in enumerate(indata):
+                if self.limit is not None and i == self.limit:
+                    break
+                def transform(align: str) -> List[int]:
+                    src, trg = align.split('-')
+                    return [int(src), int(trg)]
+
+                yield map(transform, alignments)
 
 
 def create_sequence_readers(sources: List[str], targets: List[str],
