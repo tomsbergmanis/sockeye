@@ -140,7 +140,7 @@ def test_sequence_reader(sequences, use_vocab, add_bos, add_eos):
             assert read_sequences == expected_sequences
 
 
-def test_metadata_reader():
+def test_alignment_reader():
 
     inputs = [r'{"a": 1, "b": 0, "c": 0.5}', r'{}']
     expected_data_no_vocab = [[['a', 'b', 'c'], [1., 0., 0.5]], None]
@@ -151,8 +151,8 @@ def test_metadata_reader():
             for inp in inputs:
                 print(inp, file=f)
 
-        vocabulary = vocab.build_from_paths([path], is_metadata=True)
-        reader = data_io.MetadataReader(path, vocabulary=vocabulary)
+        vocabulary = vocab.build_from_paths([path], is_alignment=True)
+        reader = data_io.AlignmentReader(path, vocabulary=vocabulary)
 
         read_data = [d for d in reader]
         assert len(read_data) == len(inputs)
@@ -181,7 +181,7 @@ def test_metadata_reader():
 def test_nonparallel_iter(source_iterables, target_iterables):
     with pytest.raises(SockeyeError) as e:
         list(data_io.parallel_iter(source_iterables, target_iterables))
-    assert str(e.value) == "Different number of lines in source(s), target(s), and (if specified) metadata iterables."
+    assert str(e.value) == "Different number of lines in source(s), target(s), and (if specified) alignment iterables."
 
 
 @pytest.mark.parametrize("source_iterables, target_iterables",
@@ -210,9 +210,9 @@ def test_not_target_token_parallel_iter(source_iterables, target_iterables):
     assert str(e.value).startswith("Target sequences are not token-parallel")
 
 
-@pytest.mark.parametrize("source_iterables, target_iterables, metadata_iterable, expected",
+@pytest.mark.parametrize("source_iterables, target_iterables, alignment_iterable, expected",
                          [
-                             # Without metadata
+                             # Without alignment
                              (
                                      [[[0], [1, 1]], [[0], [1, 1]]],
                                      [[[0], [1]]],
@@ -249,7 +249,7 @@ def test_not_target_token_parallel_iter(source_iterables, target_iterables):
                                      None,
                                      []
                              ),
-                             # With metadata
+                             # With alignment
                              (
                                      [[[0], [1, 1]], [[0], [1, 1]]],
                                      [[[0], [1]]],
@@ -269,8 +269,8 @@ def test_not_target_token_parallel_iter(source_iterables, target_iterables):
                                      []
                              ),
                          ])
-def test_parallel_iter(source_iterables, target_iterables, metadata_iterable, expected):
-    assert list(data_io.parallel_iter(source_iterables, target_iterables, metadata_iterable)) == expected
+def test_parallel_iter(source_iterables, target_iterables, alignment_iterable, expected):
+    assert list(data_io.parallel_iter(source_iterables, target_iterables, alignment_iterable)) == expected
 
 
 def test_sample_based_define_bucket_batch_sizes():
@@ -335,7 +335,7 @@ def test_compute_slice_indices_from_sequence_lengths():
     assert torch.equal(data_io.compute_slice_indices_from_sequence_lengths(seq_lens), slice_indices)
 
 
-def _compare_metadata_tensors(name_ids1, weights1, slice_indices1, name_ids2, weights2, slice_indices2):
+def _compare_alignment_tensors(name_ids1, weights1, slice_indices1, name_ids2, weights2, slice_indices2):
         # Equal
         assert name_ids1.dtype == name_ids2.dtype
         assert torch.equal(name_ids1, name_ids2)
@@ -347,7 +347,7 @@ def _compare_metadata_tensors(name_ids1, weights1, slice_indices1, name_ids2, we
         assert torch.equal(slice_indices1, slice_indices2)
 
 
-@pytest.mark.parametrize("metadata_tuple_list,metadata_tensors", [
+@pytest.mark.parametrize("alignment_tuple_list,alignment_tensors", [
     ([(np.array([0], dtype='int32'), np.array([1.], dtype='float32'))],
      (torch.tensor([0], dtype=torch.int32),
       torch.tensor([1.], dtype=torch.float32),
@@ -365,22 +365,22 @@ def _compare_metadata_tensors(name_ids1, weights1, slice_indices1, name_ids2, we
       torch.zeros(0, dtype=torch.float32),
       torch.zeros(0, 2, dtype=torch.int64)))
 ])
-def test_metadata_bucket_creation(metadata_tuple_list, metadata_tensors):
+def test_alignment_bucket_creation(alignment_tuple_list, alignment_tensors):
 
     # Test packing and conversion
-    metadata_bucket = data_io.MetadataBucket.from_numpy_tuple_list(metadata_tuple_list)
-    _compare_metadata_tensors(*metadata_bucket.as_tuple(), *metadata_tensors)
-    assert len(metadata_bucket) == len(metadata_tuple_list)
+    alignment_bucket = data_io.AlignmentBucket.from_numpy_tuple_list(alignment_tuple_list)
+    _compare_alignment_tensors(*alignment_bucket.as_tuple(), *alignment_tensors)
+    assert len(alignment_bucket) == len(alignment_tuple_list)
 
     # Test slicing individual sequences
-    for i, (name_ids_np, weights_np) in enumerate(metadata_tuple_list):
-        name_ids, weights = metadata_bucket.get(i)
+    for i, (name_ids_np, weights_np) in enumerate(alignment_tuple_list):
+        name_ids, weights = alignment_bucket.get(i)
         assert torch.equal(name_ids, torch.tensor(name_ids_np))
         assert torch.allclose(weights, torch.tensor(weights_np))
 
     # Test tuple round trip
-    metadata_bucket_rt = data_io.MetadataBucket(*metadata_bucket.as_tuple())
-    _compare_metadata_tensors(*metadata_bucket_rt.as_tuple(), *metadata_tensors)
+    alignment_bucket_rt = data_io.AlignmentBucket(*alignment_bucket.as_tuple())
+    _compare_alignment_tensors(*alignment_bucket_rt.as_tuple(), *alignment_tensors)
 
 
 @pytest.mark.parametrize("start,end,expected_batch", [
@@ -403,8 +403,8 @@ def test_metadata_bucket_creation(metadata_tuple_list, metadata_tensors):
                           [0., 0., 0., 0., 0.],
                           [0.2, 0.2, 0.2, 0.2, 0.2]], dtype=torch.float32))),
 ])
-def test_metadata_bucket_get_batch(start, end, expected_batch):
-    metadata_tuple_list = [
+def test_alignment_bucket_get_batch(start, end, expected_batch):
+    alignment_tuple_list = [
         (np.array([], dtype='int32'), np.array([], dtype='float32')),
         (np.array([], dtype='int32'), np.array([], dtype='float32')),
         (np.array([0, 1], dtype='int32'), np.array([0.5, 0.5], dtype='float32')),
@@ -414,15 +414,15 @@ def test_metadata_bucket_get_batch(start, end, expected_batch):
         (np.array([], dtype='int32'), np.array([], dtype='float32')),
         (np.array([0, 1, 2, 3, 4], dtype='int32'), np.array([0.2, 0.2, 0.2, 0.2, 0.2], dtype='float32')),
     ]
-    metadata_bucket = data_io.MetadataBucket.from_numpy_tuple_list(metadata_tuple_list)
-    batch = metadata_bucket.get_batch(start, end)
+    alignment_bucket = data_io.AlignmentBucket.from_numpy_tuple_list(alignment_tuple_list)
+    batch = alignment_bucket.get_batch(start, end)
     assert batch[0].dtype == expected_batch[0].dtype
     assert torch.equal(batch[0], expected_batch[0])
     assert batch[1].dtype == expected_batch[1].dtype
     assert torch.allclose(batch[1], expected_batch[1])
 
 
-metadata_tuple_lists = [
+alignment_tuple_lists = [
     [],
     [(np.array([0], dtype='int32'), np.array([1.], dtype='float32')),
      (np.array([0, 1], dtype='int32'), np.array([0.5, 0.5], dtype='float32')),
@@ -444,62 +444,62 @@ metadata_tuple_lists = [
 ]
 
 
-@pytest.mark.parametrize("metadata_tuple_list", metadata_tuple_lists)
-def test_metadata_bucket_slice_copy(metadata_tuple_list):
-    metadata_bucket = data_io.MetadataBucket.from_numpy_tuple_list(metadata_tuple_list)
-    # For various slice sizes taken from various positions in the metadata...
-    for slice_size in {0, 1, 2, len(metadata_tuple_list) // 2, len(metadata_tuple_list)}:
-        for start in range(0, len(metadata_tuple_list)):
+@pytest.mark.parametrize("alignment_tuple_list", alignment_tuple_lists)
+def test_alignment_bucket_slice_copy(alignment_tuple_list):
+    alignment_bucket = data_io.AlignmentBucket.from_numpy_tuple_list(alignment_tuple_list)
+    # For various slice sizes taken from various positions in the alignment...
+    for slice_size in {0, 1, 2, len(alignment_tuple_list) // 2, len(alignment_tuple_list)}:
+        for start in range(0, len(alignment_tuple_list)):
             end = start + slice_size
-            # Check that the sliced MetadataBucket is identical to the
-            # MetadataBucket created from the slice of the original tuple list
+            # Check that the sliced AlignmentBucket is identical to the
+            # AlignmentBucket created from the slice of the original tuple list
             # using the same indices.
-            sliced_metadata_bucket = metadata_bucket.slice_copy(start, end)
-            metadata_bucket_from_slice = data_io.MetadataBucket.from_numpy_tuple_list(metadata_tuple_list[start:end])
-            _compare_metadata_tensors(*sliced_metadata_bucket.as_tuple(), *metadata_bucket_from_slice.as_tuple())
+            sliced_alignment_bucket = alignment_bucket.slice_copy(start, end)
+            alignment_bucket_from_slice = data_io.AlignmentBucket.from_numpy_tuple_list(alignment_tuple_list[start:end])
+            _compare_alignment_tensors(*sliced_alignment_bucket.as_tuple(), *alignment_bucket_from_slice.as_tuple())
 
 
-@pytest.mark.parametrize("metadata_tuple_list", metadata_tuple_lists)
-def test_metadata_bucket_index_select(metadata_tuple_list):
-    if len(metadata_tuple_list) <= 0:
+@pytest.mark.parametrize("alignment_tuple_list", alignment_tuple_lists)
+def test_alignment_bucket_index_select(alignment_tuple_list):
+    if len(alignment_tuple_list) <= 0:
         # Cannot select from buckets of size 0
         return
-    indices = random.choices(range(len(metadata_tuple_list) - 1), k=10)
-    # Test: create MetadataBucket from tuple list and then call index_select
-    metadata_bucket = data_io.MetadataBucket.from_numpy_tuple_list(metadata_tuple_list)
-    selected_metadata_bucket = metadata_bucket.index_select(torch.tensor(indices))
+    indices = random.choices(range(len(alignment_tuple_list) - 1), k=10)
+    # Test: create AlignmentBucket from tuple list and then call index_select
+    alignment_bucket = data_io.AlignmentBucket.from_numpy_tuple_list(alignment_tuple_list)
+    selected_alignment_bucket = alignment_bucket.index_select(torch.tensor(indices))
     # Reference: create tuple list from selected indices and then create
-    # MetadataBucket
-    selected_tuple_list = [metadata_tuple_list[i] for i in indices]
-    metadata_bucket_from_selected = metadata_bucket.from_numpy_tuple_list(selected_tuple_list)
-    _compare_metadata_tensors(*selected_metadata_bucket.as_tuple(), *metadata_bucket_from_selected.as_tuple())
+    # AlignmentBucket
+    selected_tuple_list = [alignment_tuple_list[i] for i in indices]
+    alignment_bucket_from_selected = alignment_bucket.from_numpy_tuple_list(selected_tuple_list)
+    _compare_alignment_tensors(*selected_alignment_bucket.as_tuple(), *alignment_bucket_from_selected.as_tuple())
 
 
-@pytest.mark.parametrize("metadata_tuple_list", metadata_tuple_lists)
-def test_metadata_bucket_repeat(metadata_tuple_list):
-    metadata_bucket = data_io.MetadataBucket.from_numpy_tuple_list(metadata_tuple_list)
+@pytest.mark.parametrize("alignment_tuple_list", alignment_tuple_lists)
+def test_alignment_bucket_repeat(alignment_tuple_list):
+    alignment_bucket = data_io.AlignmentBucket.from_numpy_tuple_list(alignment_tuple_list)
     # For various numbers of repeats...
     for repeats in (0, 1, 2, 5):
-        # Check that the repeated MetadataBucket is identical to the
-        # MetadataBucket created from repeating the original tuple list.
-        repeated_metadata_bucket = metadata_bucket.repeat(repeats)
-        metadata_bucket_from_repeated = data_io.MetadataBucket.from_numpy_tuple_list(metadata_tuple_list * repeats)
-        _compare_metadata_tensors(*repeated_metadata_bucket.as_tuple(), *metadata_bucket_from_repeated.as_tuple())
+        # Check that the repeated AlignmentBucket is identical to the
+        # AlignmentBucket created from repeating the original tuple list.
+        repeated_alignment_bucket = alignment_bucket.repeat(repeats)
+        alignment_bucket_from_repeated = data_io.AlignmentBucket.from_numpy_tuple_list(alignment_tuple_list * repeats)
+        _compare_alignment_tensors(*repeated_alignment_bucket.as_tuple(), *alignment_bucket_from_repeated.as_tuple())
 
 
-@pytest.mark.parametrize("metadata_tuple_list", metadata_tuple_lists)
-def test_metadata_bucket_fill_up(metadata_tuple_list):
-    if len(metadata_tuple_list) <= 0:
+@pytest.mark.parametrize("alignment_tuple_list", alignment_tuple_lists)
+def test_alignment_bucket_fill_up(alignment_tuple_list):
+    if len(alignment_tuple_list) <= 0:
         # Cannot fill up buckets of size 0
         return
-    desired_indices = random.choices(range(len(metadata_tuple_list)), k=10)
-    # Test: create MetadataBucket from tuple list and then call fill_up
-    metadata_bucket = data_io.MetadataBucket.from_numpy_tuple_list(metadata_tuple_list)
-    filled_up_metadata_bucket = metadata_bucket.fill_up(torch.tensor(desired_indices))
-    # Reference: fill up tuple list and then create MetadataBucket
-    filled_up_metadata_tuple_list = metadata_tuple_list + [metadata_tuple_list[i] for i in desired_indices]
-    metadata_bucket_from_filled_up = data_io.MetadataBucket.from_numpy_tuple_list(filled_up_metadata_tuple_list)
-    _compare_metadata_tensors(*filled_up_metadata_bucket.as_tuple(), *metadata_bucket_from_filled_up.as_tuple())
+    desired_indices = random.choices(range(len(alignment_tuple_list)), k=10)
+    # Test: create AlignmentBucket from tuple list and then call fill_up
+    alignment_bucket = data_io.AlignmentBucket.from_numpy_tuple_list(alignment_tuple_list)
+    filled_up_alignment_bucket = alignment_bucket.fill_up(torch.tensor(desired_indices))
+    # Reference: fill up tuple list and then create AlignmentBucket
+    filled_up_alignment_tuple_list = alignment_tuple_list + [alignment_tuple_list[i] for i in desired_indices]
+    alignment_bucket_from_filled_up = data_io.AlignmentBucket.from_numpy_tuple_list(filled_up_alignment_tuple_list)
+    _compare_alignment_tensors(*filled_up_alignment_bucket.as_tuple(), *alignment_bucket_from_filled_up.as_tuple())
 
 
 def _get_random_bucketed_data(
@@ -507,9 +507,9 @@ def _get_random_bucketed_data(
     min_count: int,
     max_count: int,
     bucket_counts: Optional[List[Optional[int]]] = None,
-    include_metadata: bool = False) -> Tuple[List[torch.Tensor],
+    include_alignment: bool = False) -> Tuple[List[torch.Tensor],
                                              List[torch.Tensor],
-                                             Optional[List[data_io.MetadataBucket]]]:
+                                             Optional[List[data_io.AlignmentBucket]]]:
     """
     Get random bucket data.
 
@@ -518,8 +518,8 @@ def _get_random_bucketed_data(
     :param max_count: The maximum number of samples that will be sampled if no exact count is given.
     :param bucket_counts: For each bucket an optional exact example count can be given. If it is not given it will be
                           sampled.
-    :param include_metadata: Also generate random metadata (otherwise return None for metadata).
-    :return: The random source and target tensors and optional metadata.
+    :param include_alignment: Also generate random alignment (otherwise return None for alignment).
+    :return: The random source and target tensors and optional alignment.
     """
     if bucket_counts is None:
         bucket_counts = [None for _ in buckets]
@@ -529,33 +529,33 @@ def _get_random_bucketed_data(
               for count, bucket in zip(bucket_counts, buckets)]
     target = [torch.randint(0, 10, (count, random.randint(2, bucket[1]), 1))
               for count, bucket in zip(bucket_counts, buckets)]
-    metadata = None
-    if include_metadata:
-        metadata = []
+    alignment = None
+    if include_alignment:
+        alignment = []
         for count, bucket in zip(bucket_counts, buckets):
-            metadata_tuple_list = []
+            alignment_tuple_list = []
             for _ in range(count):
                 name_ids = np.random.randint(0, 10, (random.randint(0, bucket[0]),))
                 weights = np.random.rand(*name_ids.shape)
-                metadata_tuple_list.append((name_ids, weights))
-            metadata.append(data_io.MetadataBucket.from_numpy_tuple_list(metadata_tuple_list))
-    return source, target, metadata
+                alignment_tuple_list.append((name_ids, weights))
+            alignment.append(data_io.AlignmentBucket.from_numpy_tuple_list(alignment_tuple_list))
+    return source, target, alignment
 
 
-@pytest.mark.parametrize("include_metadata", [False, True])
-def test_parallel_data_set(include_metadata):
+@pytest.mark.parametrize("include_alignment", [False, True])
+def test_parallel_data_set(include_alignment):
     buckets = data_io.define_parallel_buckets(100, 100, 10, True, 1.0)
-    source, target, metadata = _get_random_bucketed_data(buckets, min_count=0, max_count=5,
-                                                         include_metadata=include_metadata)
+    source, target, alignment = _get_random_bucketed_data(buckets, min_count=0, max_count=5,
+                                                         include_alignment=include_alignment)
 
     def check_equal(tensors1, tensors2):
         assert len(tensors1) == len(tensors2)
         for a1, a2 in zip(tensors1, tensors2):
             assert torch.equal(a1, a2)
 
-    def check_equal_metadata(metadata1, metadata2):
-        assert len(metadata1) == len(metadata2)
-        for md1, md2 in zip(metadata1, metadata2):
+    def check_equal_alignment(alignment1, alignment2):
+        assert len(alignment1) == len(alignment2)
+        for md1, md2 in zip(alignment1, alignment2):
             assert len(md1) == len(md2)
             for i in range(len(md1)):
                 name_ids1, weights1 = md1.get(i)
@@ -564,25 +564,25 @@ def test_parallel_data_set(include_metadata):
                 assert torch.allclose(weights1, weights2)
 
     with TemporaryDirectory() as work_dir:
-        dataset = data_io.ParallelDataSet(source, target, metadata)
+        dataset = data_io.ParallelDataSet(source, target, alignment)
         fname = os.path.join(work_dir, 'dataset')
         dataset.save(fname)
         dataset_loaded = data_io.ParallelDataSet.load(fname)
         check_equal(dataset.source, dataset_loaded.source)
         check_equal(dataset.target, dataset_loaded.target)
-        if include_metadata:
-            check_equal_metadata(dataset.metadata, dataset_loaded.metadata)
+        if include_alignment:
+            check_equal_alignment(dataset.alignment, dataset_loaded.alignment)
         else:
             # Test backward compatibility: with the legacy format (source/target
-            # only; no metadata)
+            # only; no alignment)
             dataset.save(fname, use_legacy_format=True)
             dataset_loaded = data_io.ParallelDataSet.load(fname)
             check_equal(dataset.source, dataset_loaded.source)
             check_equal(dataset.target, dataset_loaded.target)
 
 
-@pytest.mark.parametrize("include_metadata", [False, True])
-def test_parallel_data_set_fill_up(include_metadata):
+@pytest.mark.parametrize("include_alignment", [False, True])
+def test_parallel_data_set_fill_up(include_alignment):
     batch_size = 32
     buckets = data_io.define_parallel_buckets(100, 100, 10, True, 1.0)
     bucket_batch_sizes = data_io.define_bucket_batch_sizes(buckets,
@@ -590,7 +590,7 @@ def test_parallel_data_set_fill_up(include_metadata):
                                                            batch_type=C.BATCH_TYPE_SENTENCE,
                                                            data_target_average_len=[None] * len(buckets))
     dataset = data_io.ParallelDataSet(*_get_random_bucketed_data(buckets, min_count=1, max_count=5,
-                                                                 include_metadata=include_metadata))
+                                                                 include_alignment=include_alignment))
 
     dataset_filled_up = dataset.fill_up(bucket_batch_sizes)
     assert len(dataset_filled_up.source) == len(dataset.source)
@@ -621,8 +621,8 @@ def test_get_permutations():
             assert len(p_set) == 1
 
 
-@pytest.mark.parametrize("include_metadata", [False, True])
-def test_parallel_data_set_permute(include_metadata):
+@pytest.mark.parametrize("include_alignment", [False, True])
+def test_parallel_data_set_permute(include_alignment):
     batch_size = 5
     buckets = data_io.define_parallel_buckets(100, 100, 10, True, 1.0)
     bucket_batch_sizes = data_io.define_bucket_batch_sizes(buckets,
@@ -630,7 +630,7 @@ def test_parallel_data_set_permute(include_metadata):
                                                            batch_type=C.BATCH_TYPE_SENTENCE,
                                                            data_target_average_len=[None] * len(buckets))
     dataset = data_io.ParallelDataSet(*_get_random_bucketed_data(buckets, min_count=0, max_count=5,
-                                                                 include_metadata=include_metadata)).fill_up(
+                                                                 include_alignment=include_alignment)).fill_up(
         bucket_batch_sizes)
 
     permutations, inverse_permutations = data_io.get_permutations(dataset.get_bucket_counts())
@@ -643,14 +643,14 @@ def test_parallel_data_set_permute(include_metadata):
         if num_samples:
             assert (dataset.source[buck_idx] == dataset_restored.source[buck_idx]).all()
             assert (dataset.target[buck_idx] == dataset_restored.target[buck_idx]).all()
-            if include_metadata:
-                _compare_metadata_tensors(*dataset.metadata[buck_idx].as_tuple(),
-                                          *dataset_restored.metadata[buck_idx].as_tuple())
+            if include_alignment:
+                _compare_alignment_tensors(*dataset.alignment[buck_idx].as_tuple(),
+                                          *dataset_restored.alignment[buck_idx].as_tuple())
         else:
             assert not dataset_restored.source[buck_idx].shape[0]
             assert not dataset_restored.target[buck_idx].shape[0]
-            if include_metadata:
-                assert not len(dataset_restored.metadata[buck_idx])
+            if include_alignment:
+                assert not len(dataset_restored.alignment[buck_idx])
 
 
 def test_get_batch_indices():

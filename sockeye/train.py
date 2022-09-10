@@ -278,7 +278,7 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
     :param resume_training: Whether to resume training.
     :param output_folder: Output folder.
     :return: The data iterators (train, validation, config_data) as well as the
-             source, target, and (optional) metadata vocabularies.
+             source, target, and (optional) alignment vocabularies.
     """
     num_words_source, num_words_target = args.num_words
     num_words_source = num_words_source if num_words_source > 0 else None
@@ -290,7 +290,7 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
     validation_sources = [str(os.path.abspath(source)) for source in validation_sources]
     validation_targets = [args.validation_target] + args.validation_target_factors
     validation_targets = [str(os.path.abspath(target)) for target in validation_targets]
-    validation_metadata = os.path.abspath(args.validation_metadata) if args.validation_metadata is not None else None
+    validation_alignment = os.path.abspath(args.validation_alignment) if args.validation_alignment is not None else None
 
     if utils.is_distributed():
         error_msg = 'Distributed training requires prepared training data. Use `python -m sockeye.prepare_data` and ' \
@@ -299,23 +299,23 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
     either_raw_or_prepared_error_msg = "Either specify a raw training corpus with %s, %s, and optional %s or a " \
                                        "preprocessed corpus with %s." % (C.TRAINING_ARG_SOURCE,
                                                                          C.TRAINING_ARG_TARGET,
-                                                                         C.TRAINING_ARG_METADATA,
+                                                                         C.TRAINING_ARG_ALIGNMENT,
                                                                          C.TRAINING_ARG_PREPARED_DATA)
     if args.prepared_data is not None:
-        utils.check_condition(args.source is None and args.target is None and args.metadata is None,
+        utils.check_condition(args.source is None and args.target is None and args.alignment is None,
                               either_raw_or_prepared_error_msg)
         if not resume_training:
             utils.check_condition(args.source_vocab is None and
                                   args.target_vocab is None and
-                                  args.metadata_vocab is None,
+                                  args.alignment_vocab is None,
                                   "You are using a prepared data folder, which is tied to a vocabulary. "
                                   "To change it you need to rerun data preparation with a different vocabulary.")
         (train_iter, validation_iter, data_config,
-         source_vocabs, target_vocabs, metadata_vocab) = data_io.get_prepared_data_iters(
+         source_vocabs, target_vocabs, alignment_vocab) = data_io.get_prepared_data_iters(
             prepared_data_dir=args.prepared_data,
             validation_sources=validation_sources,
             validation_targets=validation_targets,
-            validation_metadata=validation_metadata,
+            validation_alignment=validation_alignment,
             shared_vocab=shared_vocab,
             batch_size=args.batch_size,
             batch_type=args.batch_type,
@@ -331,9 +331,9 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
                         or len(target_vocabs) == len(args.target_factors_num_embed) + 1,
                         "Data was prepared with %d target factors, but only provided %d target factor dimensions." % (
                             len(target_vocabs), len(args.target_factors_num_embed) + 1))
-        if metadata_vocab is not None and validation_metadata is None:
-            logger.warning('Metadata is specified for prepared training data but not validation data. '
-                           'All validation data will use empty metadata.')
+        if alignment_vocab is not None and validation_alignment is None:
+            logger.warning('Alignment is specified for prepared training data but not validation data. '
+                           'All validation data will use empty alignment.')
 
         if resume_training:
             # Resuming training. Making sure the vocabs in the model and in the prepared data match up
@@ -345,11 +345,11 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
             for i, (v, mv) in enumerate(zip(target_vocabs, model_target_vocabs)):
                 utils.check_condition(vocab.are_identical(v, mv),
                                       "Prepared data and resumed model target vocab %d do not match." % i)
-            model_metadata_vocab = vocab.load_metadata_vocab(output_folder)
-            if model_metadata_vocab is not None:
-                utils.check_condition(metadata_vocab is not None
-                                      and vocab.are_identical(metadata_vocab, model_metadata_vocab),
-                                      "Prepared data metadata vocab must exist and match resumed model metadata vocab.")
+            model_alignment_vocab = vocab.load_alignment_vocab(output_folder)
+            if model_alignment_vocab is not None:
+                utils.check_condition(alignment_vocab is not None
+                                      and vocab.are_identical(alignment_vocab, model_alignment_vocab),
+                                      "Prepared data alignment vocab must exist and match resumed model alignment vocab.")
 
         check_condition(data_config.num_source_factors == len(validation_sources),
                         'Training and validation data must have the same number of source factors,'
@@ -360,7 +360,7 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
                         ' but found %d and %d.' % (
                             data_config.num_target_factors, len(validation_targets)))
 
-        return train_iter, validation_iter, data_config, source_vocabs, target_vocabs, metadata_vocab
+        return train_iter, validation_iter, data_config, source_vocabs, target_vocabs, alignment_vocab
 
     else:
         utils.check_condition(args.prepared_data is None and args.source is not None and args.target is not None,
@@ -370,7 +370,7 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
             # Load the existing vocabs created when starting the training run.
             source_vocabs = vocab.load_source_vocabs(output_folder)
             target_vocabs = vocab.load_target_vocabs(output_folder)
-            metadata_vocab = vocab.load_metadata_vocab(output_folder)
+            alignment_vocab = vocab.load_alignment_vocab(output_folder)
 
             # Recover the vocabulary path from the data info file:
             data_info = cast(data_io.DataInfo, Config.load(os.path.join(output_folder, C.DATA_INFO)))
@@ -385,15 +385,15 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
             target_factor_vocab_paths = [args.target_factor_vocabs[i] if i < len(args.target_factor_vocabs)
                                          else None for i in range(len(args.target_factors))]
             target_vocab_paths = [args.target_vocab] + target_factor_vocab_paths
-            source_vocabs, target_vocabs, metadata_vocab = vocab.load_or_create_vocabs(
+            source_vocabs, target_vocabs, alignment_vocab = vocab.load_or_create_vocabs(
                 shard_source_paths=[[args.source] + args.source_factors],
                 shard_target_paths=[[args.target] + args.target_factors],
-                shard_metadata_paths=[args.metadata] if args.metadata is not None else None,
+                shard_alignment_paths=[args.alignment] if args.alignment is not None else None,
                 source_vocab_paths=source_vocab_paths,
                 source_factor_vocab_same_as_source=args.source_factors_share_embedding,
                 target_vocab_paths=target_vocab_paths,
                 target_factor_vocab_same_as_target=args.target_factors_share_embedding,
-                metadata_vocab_path=args.metadata_vocab,
+                alignment_vocab_path=args.alignment_vocab,
                 shared_vocab=shared_vocab,
                 num_words_source=num_words_source,
                 num_words_target=num_words_target,
@@ -416,7 +416,7 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
         sources = [str(os.path.abspath(s)) for s in sources]
         targets = [args.target] + args.target_factors
         targets = [str(os.path.abspath(t)) for t in targets]
-        metadata = os.path.abspath(args.metadata) if args.metadata is not None else None
+        alignment = os.path.abspath(args.alignment) if args.alignment is not None else None
 
 
         check_condition(len(sources) == len(validation_sources),
@@ -425,9 +425,9 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
         check_condition(len(targets) == len(validation_targets),
                         'Training and validation data must have the same number of target factors, '
                         'but found %d and %d.' % (len(targets), len(validation_targets)))
-        if metadata is not None and validation_metadata is None:
-            logger.warning('Metadata is specified for training but not validation data. '
-                           'All validation data will use empty metadata.')
+        if alignment is not None and validation_alignment is None:
+            logger.warning('Alignment is specified for training but not validation data. '
+                           'All validation data will use empty alignment.')
 
         train_iter, validation_iter, config_data, data_info = data_io.get_training_data_iters(
             sources=sources,
@@ -453,7 +453,7 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
         logger.info("Writing data config to '%s'", data_info_fname)
         data_info.save(data_info_fname)
 
-        return train_iter, validation_iter, config_data, source_vocabs, target_vocabs, metadata_vocab
+        return train_iter, validation_iter, config_data, source_vocabs, target_vocabs, alignment_vocab
 
 
 def create_encoder_config(args: argparse.Namespace,
@@ -1038,7 +1038,7 @@ def train(args: argparse.Namespace, custom_metrics_logger: Optional[Callable] = 
     logger.info(f'Training Device: {device}')
     utils.seed_rngs(args.seed)
 
-    train_iter, eval_iter, config_data, source_vocabs, target_vocabs, metadata_vocab = create_data_iters_and_vocabs(
+    train_iter, eval_iter, config_data, source_vocabs, target_vocabs, alignment_vocab = create_data_iters_and_vocabs(
         args=args,
         max_seq_len_source=max_seq_len_source,
         max_seq_len_target=max_seq_len_target,
@@ -1059,17 +1059,17 @@ def train(args: argparse.Namespace, custom_metrics_logger: Optional[Callable] = 
     if utils.is_primary_worker() and not resume_training:
         vocab.save_source_vocabs(source_vocabs, output_folder)
         vocab.save_target_vocabs(target_vocabs, output_folder)
-        if metadata_vocab is not None:
-            vocab.save_metadata_vocab(metadata_vocab, output_folder)
+        if alignment_vocab is not None:
+            vocab.save_alignment_vocab(alignment_vocab, output_folder)
 
     source_vocab_sizes = [len(v) for v in source_vocabs]
     target_vocab_sizes = [len(v) for v in target_vocabs]
-    metadata_vocab_size = len(metadata_vocab) if metadata_vocab is not None else None
+    alignment_vocab_size = len(alignment_vocab) if alignment_vocab is not None else None
 
     logger.info('Vocabulary sizes: source=[%s] target=[%s]%s',
                 '|'.join([str(size) for size in source_vocab_sizes]),
                 '|'.join([str(size) for size in target_vocab_sizes]),
-                ' metadata=[%d]' % metadata_vocab_size if metadata_vocab is not None else '')
+                ' alignment=[%d]' % alignment_vocab_size if alignment_vocab is not None else '')
 
     model_config = create_model_config(args=args,
                                        source_vocab_sizes=source_vocab_sizes,

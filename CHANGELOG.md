@@ -17,7 +17,7 @@ Each version section may have subsections for: _Added_, _Changed_, _Removed_, _D
 
 ### Changed
 
-- Sockeye uses a new dictionary-based prepared data format that supports metadata (version 7). The previous format (version 6) is still supported.
+- Sockeye uses a new prepared data format that supports alignment (version 7). The previous format (version 6) is still supported.
 
 ### Fixed
 

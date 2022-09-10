@@ -53,7 +53,7 @@ ENCODER_DECODER_SETTINGS_TEMPLATE = [
      " --checkpoint-interval 20 --optimizer adam --initial-learning-rate 0.01 --learning-rate-scheduler none",
      "--beam-size 2 --nbest-size 2",
      False, 0, 0, 0.),
-    # Basic transformer with metadata support: target reversed/tagged with p=0.5
+    # Basic transformer with alignment support: target reversed/tagged with p=0.5
     ("--encoder transformer --decoder {decoder}"
      " --num-layers 2 --transformer-attention-heads 2 --transformer-model-size 8 --num-embed 8"
      " --transformer-feed-forward-num-hidden 16"
@@ -164,13 +164,12 @@ TEST_CASES = [(train_params.format(decoder=decoder), *other_params)
 
 
 @pytest.mark.parametrize("train_params, translate_params, use_prepared_data,"
-                         "n_source_factors, n_target_factors, p_reverse_with_metadata_tag", TEST_CASES)
+                         "n_source_factors, n_target_factors, p_reverse_with_alignment_tag", TEST_CASES)
 def test_seq_copy(train_params: str,
                   translate_params: str,
                   use_prepared_data: bool,
                   n_source_factors: int,
-                  n_target_factors: int,
-                  p_reverse_with_metadata_tag: float):
+                  n_target_factors: int):
     """
     Task: copy short sequences of digits
     """
@@ -186,8 +185,7 @@ def test_seq_copy(train_params: str,
                             test_max_length=_TEST_MAX_LENGTH,
                             sort_target=False,
                             with_n_source_factors=n_source_factors,
-                            with_n_target_factors=n_target_factors,
-                            p_reverse_with_metadata_tag=p_reverse_with_metadata_tag) as data:
+                            with_n_target_factors=n_target_factors) as data:
         # TODO: Here we temporarily switch off comparing translation and scoring scores, which
         # sometimes produces inconsistent results for --batch-size > 1 (see issue #639 on github).
         check_train_translate(train_params=train_params,
