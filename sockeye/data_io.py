@@ -961,7 +961,6 @@ def get_training_data_iters(sources: List[str],
 
     :param sources: Path to source training data (with optional factor data paths).
     :param targets: Path to target training data (with optional factor data paths).
-    :param guided_alignments: Path to guided alignment training data
     :param validation_sources: Path to source validation data (with optional factor data paths).
     :param validation_targets: Path to target validation data (with optional factor data paths).
     :param source_vocabs: Source vocabulary and optional factor vocabularies.
@@ -1347,8 +1346,7 @@ class MetadataReader:
 
 def create_sequence_readers(sources: List[str], targets: List[str],
                             vocab_sources: List[vocab.Vocab],
-                            vocab_targets: List[vocab.Vocab],
-                            guided_alignments: Optional[str] = None) \
+                            vocab_targets: List[vocab.Vocab]) \
         -> Tuple[List[SequenceReader], List[SequenceReader], SequenceReader]:
     """
     Create source readers with EOS and target readers with BOS.
@@ -1357,26 +1355,21 @@ def create_sequence_readers(sources: List[str], targets: List[str],
     :param targets: The file name of the target data and factors.
     :param vocab_sources: The source vocabularies.
     :param vocab_targets: The target vocabularies.
-    :param guided_alignments: The file name of guided_alignments.
     :return: The source sequence readers and the target reader.
     """
     source_sequence_readers = [SequenceReader(source, vocab, add_eos=True) for source, vocab in
                                 zip(sources, vocab_sources)]
     target_sequence_readers = [SequenceReader(target, vocab, add_bos=True) for target, vocab in
                                 zip(targets, vocab_targets)]
-    guided_alignment_reader = None
-    if guided_alignments is not None:
-        guided_alignment_reader = GuidedAlignmentReader(guided_alignments)
 
-    return source_sequence_readers, target_sequence_readers, guided_alignment_reader
+    return source_sequence_readers, target_sequence_readers
 
 
 def parallel_iter(source_iterables: Sequence[Iterable[Optional[Any]]],
                   target_iterables: Sequence[Iterable[Optional[Any]]],
                   metadata_iterable: Optional[Iterable[Optional[Any]]] = None,
                   skip_blanks: bool = True,
-                  check_token_parallel: bool = True,
-                  guided_alignment_iterable: Optional[Iterable] = None):
+                  check_token_parallel: bool = True):
     """
     Creates iterators over parallel iterables by calling iter() on the iterables
     and chaining to parallel_iterate(). The purpose of the separation is to allow
@@ -1400,8 +1393,7 @@ def parallel_iterate(source_iterators: Sequence[Iterator[Optional[Any]]],
                      target_iterators: Sequence[Iterator[Optional[Any]]],
                      metadata_iterator: Optional[Iterator[Optional[Any]]] = None,
                      skip_blanks: bool = True,
-                     check_token_parallel: bool = True,
-                     guided_alignment_iterator: Optional[Iterator] = None):
+                     check_token_parallel: bool = True):
     """
     Yields parallel source(s), target sequences from iterables.
     Checks for token parallelism in source sequences.
