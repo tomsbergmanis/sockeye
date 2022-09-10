@@ -1305,12 +1305,7 @@ class SequenceReader:
 class GuidedAlignmentReader(SequenceReader):
     def __init__(self, path: str, limit: Optional[int] = None) -> None:
         super().__init__(path, None, False, False, limit)
-    def __iter__(self):
-        for alignments in read_content(self.path, self.limit):
-            def transform(align : str) -> List[int]:
-                src, trg = align.split('-')
-                return [int(src), int(trg)]
-            yield map(transform, alignments)
+
 
 class AlignmentReader:
     """
@@ -1333,15 +1328,15 @@ class AlignmentReader:
 
     def __iter__(self):
         with smart_open(self.path) as indata:
-            for i, line in enumerate(indata):
+            for i, alignments in enumerate(indata):
                 if self.limit is not None and i == self.limit:
                     break
-                data = utils.json_loads_dict(line)
-                if len(data) == 0:
-                    yield None
-                    continue
-                names, weights = zip(*data.items())
-                yield [tokens2ids(names, self.vocab), list(float(value) for value in weights)]
+                def transform(align: str) -> List[int]:
+                    src, trg = align.split('-')
+                    return [int(src), int(trg)]
+
+                yield map(transform, alignments)
+
 
 
 def create_sequence_readers(sources: List[str], targets: List[str],
