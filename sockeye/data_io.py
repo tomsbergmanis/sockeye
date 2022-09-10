@@ -1305,8 +1305,8 @@ class SequenceReader:
 class AlignmentReader:
     """
     Reads JSON alignment lines from path and creates sequence of integer [src,trg] pairs.
-    Streams from disk, instead of loading
-    all samples into memory. Empty sequences are yielded as None.
+    Streams from disk, instead of loading all samples into memory.
+    Empty sequences are yielded as None.
 
     :param path: Path to read JSON alignment from.
     :param vocabulary: Mapping from strings to integer ids.
