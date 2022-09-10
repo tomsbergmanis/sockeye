@@ -1304,8 +1304,8 @@ class SequenceReader:
 
 class AlignmentReader:
     """
-    Reads JSON alignment lines from path and creates parallel sequences of
-    integer name ids and float weights. Streams from disk, instead of loading
+    Reads JSON alignment lines from path and creates sequence of integer [src,trg] pairs.
+    Streams from disk, instead of loading
     all samples into memory. Empty sequences are yielded as None.
 
     :param path: Path to read JSON alignment from.
@@ -1315,10 +1315,8 @@ class AlignmentReader:
 
     def __init__(self,
                  path: str,
-                 vocabulary: vocab.Vocab,
                  limit: Optional[int] = None) -> None:
         self.path = path
-        self.vocab = vocabulary
         self.limit = limit
 
     def __iter__(self):
@@ -1331,7 +1329,6 @@ class AlignmentReader:
                     return [int(src), int(trg)]
 
                 yield map(transform, alignments)
-
 
 
 def create_sequence_readers(sources: List[str], targets: List[str],
