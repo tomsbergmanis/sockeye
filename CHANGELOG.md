@@ -11,6 +11,35 @@ Note that Sockeye has checks in place to not translate with an old model that wa
 
 Each version section may have subsections for: _Added_, _Changed_, _Removed_, _Deprecated_, and _Fixed_.
 
+## [3.1.9999]
+
+### Added
+
+### Changed
+
+- Sockeye uses a new dictionary-based prepared data format that supports metadata (version 7). The previous format (version 6) is still supported.
+
+### Fixed
+
+- For distributed training, replicating examples so that each worker has at least one per bucket now correctly uses `repeat` instead of `repeat_interleave`.
+
+## [3.1.22]
+
+### Added
+
+- log beam search avg output vocab size
+
+### Changed
+
+- common base Search for GreedySearch and BeamSearch
+- .pylintrc: suppress warnings about deprecated pylint warning suppressions
+
+## [3.1.21]
+
+### Fixed
+
+- Send skip_nvs and nvs_thresh args now to Translator constructor in sockeye-translate instead of ignoring them.
+
 ## [3.1.20]
 
 ### Added

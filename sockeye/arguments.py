@@ -441,6 +441,10 @@ def add_training_data_args(params, required=False):
                         required=required,
                         type=regular_file(),
                         help='Target side of parallel training data.')
+    params.add_argument(C.TRAINING_ARG_METADATA, '-md',
+                        type=regular_file(),
+                        help='Metadata for training examples (line-parallel with source and target files). One JSON '
+                             'dictionary per line containing name-weight (str-float) pairs.')
 
 def add_guided_alignment_args(params, required=False):
     params.add_argument('--guided-alignments',
@@ -451,15 +455,15 @@ def add_guided_alignment_args(params, required=False):
     params.add_argument('--transformer-guided-alignment-layer',
                         required=False,
                         default=1,
-                        help='Number of layer to use for guided alignment training in transformer.')
+                        help='Index of the layer to use for guided alignment training in transformer.')
     params.add_argument('--transformer-guided-alignment-head',
                         required=False,
                         default=1,
-                        help='Number of head to use for guided alignment training in transformer.')
+                        help='Index of the head to use for guided alignment training in transformer.')
     params.add_argument('--guided-alignment-weight',
-                       required = False,
-                       default = 0.1,
-                       help = 'Weight for guided alignment cost.')
+                        required=False,
+                        default=0.1,
+                        help='Weight for guided alignment cost.')
 
 
 def add_validation_data_params(params):
@@ -485,6 +489,10 @@ def add_validation_data_params(params):
                         default=[],
                         help='File(s) containing additional token-parallel validation target side factors. '
                              'Default: %(default)s.')
+    params.add_argument('--validation-metadata', '-vmd',
+                        type=regular_file(),
+                        help='Metadata for validation data (line-parallel with source and target files). One JSON '
+                             'dictionary per line containing name-weight (str-float) pairs.')
 
 
 def add_prepared_data_args(params):
@@ -611,6 +619,10 @@ def add_vocab_args(params):
                         type=regular_file(),
                         default=[],
                         help='Existing target factor vocabulary (-ies) (JSON).')
+    params.add_argument('--metadata-vocab',
+                        required=False,
+                        default=None,
+                        help='Existing metadata vocabulary (JSON).')
     params.add_argument(C.VOCAB_ARG_SHARED_VOCAB,
                         action='store_true',
                         default=False,

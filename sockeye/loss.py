@@ -128,13 +128,14 @@ class LossMetric(ABC):
 
 class AlignmentCrossEntropyLoss(Loss):
     def __init__(self, name: str = C.ALIGNMENT_CROSS_ENTROPY_LOSS,
-                 output_name: str = C.LOGITS_NAME,
+                 output_name: str = C.ATTENTION_NAME % 1,
                  label_name: str = C.ALIGNMENT_LABEL_NAME,
                  weight: float = 1.0,
-                 metric_prefix: str = ''):
+                 metric_prefix: str = '',
+                 head: int = 1):
         super().__init__(name=name, output_name=output_name, label_name=label_name,
                          weight=weight, metric_prefix=metric_prefix)
-
+        self.head = head
 
     # def compute_alignment_weights(alignments):
     #     """
@@ -156,7 +157,9 @@ class AlignmentCrossEntropyLoss(Loss):
             logits here are assumed to be output of one attention layer with size (batch, target, source)
             labels are alignments in s-t format
         """
-        bsz, tgt_sz, src_sz = attn.shape
+
+        bsz, head, tgt_sz, src_sz = attn.shape
+        attn = pt.squeeze(attn[:, self.head, :, :])
         attn = attn.view(bsz * tgt_sz, src_sz)
 
         # TODO ALIGNMENT WEIGHT 1 / tgd index frequency
@@ -168,7 +171,7 @@ class AlignmentCrossEntropyLoss(Loss):
         loss = -(
             (attn[align[:, 1][:, None], align[:, 0][:, None]]).log()
             # TODO * align_weights[:, None]
-        ).sum()
+        ).sum() * self.weight
 
         return loss, pt.ones(1, device=align.device)
 

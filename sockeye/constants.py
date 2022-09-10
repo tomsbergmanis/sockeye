@@ -150,6 +150,8 @@ VOCAB_SRC_PREFIX = "vocab.src"
 VOCAB_SRC_NAME = VOCAB_SRC_PREFIX + ".%d" + JSON_SUFFIX
 VOCAB_TRG_PREFIX = "vocab.trg"
 VOCAB_TRG_NAME = VOCAB_TRG_PREFIX + ".%d" + JSON_SUFFIX
+VOCAB_METADATA_PREFIX = "vocab.md"
+VOCAB_METADATA_NAME = VOCAB_METADATA_PREFIX + JSON_SUFFIX
 VOCAB_ENCODING = "utf-8"
 PARAMS_PREFIX = "params."
 PARAMS_NAME = PARAMS_PREFIX + "%05d"
@@ -188,6 +190,7 @@ ARGS_MAY_DIFFER = ["device_id", "device_ids", "overwrite_output", "use_tensorboa
 # Other argument constants
 TRAINING_ARG_SOURCE = "--source"
 TRAINING_ARG_TARGET = "--target"
+TRAINING_ARG_METADATA = "--metadata"
 TRAINING_ARG_PREPARED_DATA = "--prepared-data"
 TRAINING_ARG_MAX_SEQ_LEN = "--max-seq-len"
 
@@ -336,14 +339,20 @@ FIXED_PARAM_STRATEGY_CHOICES = [FIXED_PARAM_STRATEGY_ALL_EXCEPT_DECODER,
                                 FIXED_PARAM_STRATEGY_ENCODER_AND_SOURCE_EMBEDDINGS,
                                 FIXED_PARAM_STRATEGY_ENCODER_HALF_AND_SOURCE_EMBEDDINGS]
 
-# data sharding
+# data saving/loading
+DATA_KEY_SOURCE = 'source'
+DATA_KEY_TARGET = 'target'
+DATA_KEY_METADATA = 'metadata'
+DATA_KEYS = [DATA_KEY_SOURCE, DATA_KEY_TARGET, DATA_KEY_METADATA]
 SHARD_NAME = "shard.%05d"
 SHARD_SOURCE = SHARD_NAME + ".source"
 SHARD_TARGET = SHARD_NAME + ".target"
+SHARD_METADATA = SHARD_NAME + ".metadata"
 DATA_INFO = "data.info"
 DATA_CONFIG = "data.config"
 PREPARED_DATA_VERSION_FILE = "data.version"
-PREPARED_DATA_VERSION = 6
+PREPARED_DATA_VERSION = 7
+PREPARED_DATA_LEGACY_VERSION = 6
 
 # reranking metric options
 RERANK_BLEU = "bleu"
