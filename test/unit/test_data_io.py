@@ -22,9 +22,7 @@ import torch
 
 from sockeye import constants as C
 from sockeye import data_io
-from sockeye import utils
 from sockeye import vocab
-from sockeye.test_utils import tmp_digits_dataset
 from sockeye.utils import SockeyeError, get_tokens, seed_rngs
 
 seed_rngs(12)
@@ -142,6 +140,29 @@ def test_sequence_reader(sequences, use_vocab, add_bos, add_eos):
             assert read_sequences == expected_sequences
 
 
+def test_metadata_reader():
+
+    inputs = [r'{"a": 1, "b": 0, "c": 0.5}', r'{}']
+    expected_data_no_vocab = [[['a', 'b', 'c'], [1., 0., 0.5]], None]
+
+    with TemporaryDirectory() as work_dir:
+        path = os.path.join(work_dir, 'input')
+        with open(path, 'w') as f:
+            for inp in inputs:
+                print(inp, file=f)
+
+        vocabulary = vocab.build_from_paths([path], is_metadata=True)
+        reader = data_io.MetadataReader(path, vocabulary=vocabulary)
+
+        read_data = [d for d in reader]
+        assert len(read_data) == len(inputs)
+
+        for data, expected_output in zip(read_data, expected_data_no_vocab):
+            if expected_output is not None:
+                expected_output = [data_io.tokens2ids(expected_output[0], vocabulary), expected_output[1]]
+            assert data == expected_output
+
+
 @pytest.mark.parametrize("source_iterables, target_iterables",
                          [
                              (
@@ -160,7 +181,7 @@ def test_sequence_reader(sequences, use_vocab, add_bos, add_eos):
 def test_nonparallel_iter(source_iterables, target_iterables):
     with pytest.raises(SockeyeError) as e:
         list(data_io.parallel_iter(source_iterables, target_iterables))
-    assert str(e.value) == "Different number of lines in source(s) and target(s) iterables."
+    assert str(e.value) == "Different number of lines in source(s), target(s), and (if specified) metadata iterables."
 
 
 @pytest.mark.parametrize("source_iterables, target_iterables",
@@ -189,41 +210,67 @@ def test_not_target_token_parallel_iter(source_iterables, target_iterables):
     assert str(e.value).startswith("Target sequences are not token-parallel")
 
 
-@pytest.mark.parametrize("source_iterables, target_iterables, expected",
+@pytest.mark.parametrize("source_iterables, target_iterables, metadata_iterable, expected",
                          [
+                             # Without metadata
                              (
                                      [[[0], [1, 1]], [[0], [1, 1]]],
                                      [[[0], [1]]],
-                                     [([[0], [0]], [[0]]), ([[1, 1], [1, 1]], [[1]])]
+                                     None,
+                                     [([[0], [0]], [[0]], None), ([[1, 1], [1, 1]], [[1]], None)]
                              ),
                              (
                                      [[[0], None], [[0], None]],
                                      [[[0], [1]]],
-                                     [([[0], [0]], [[0]])]
+                                     None,
+                                     [([[0], [0]], [[0]], None)]
                              ),
                              (
                                      [[[0], [1, 1]], [[0], [1, 1]]],
                                      [[[0], None]],
-                                     [([[0], [0]], [[0]])]
+                                     None,
+                                     [([[0], [0]], [[0]], None)]
                              ),
                              (
                                      [[None, [1, 1]], [None, [1, 1]]],
                                      [[None, [1]]],
-                                     [([[1, 1], [1, 1]], [[1]])]
+                                     None,
+                                     [([[1, 1], [1, 1]], [[1]], None)]
                              ),
                              (
                                      [[None, [1]]],
                                      [[None, [1, 1]], [None, [1, 1]]],
-                                     [([[1]], [[1, 1], [1, 1]])]
+                                     None,
+                                     [([[1]], [[1, 1], [1, 1]], None)]
                              ),
                              (
                                      [[None, [1, 1]], [None, [1, 1]]],
                                      [[None, None]],
+                                     None,
                                      []
-                             )
+                             ),
+                             # With metadata
+                             (
+                                     [[[0], [1, 1]], [[0], [1, 1]]],
+                                     [[[0], [1]]],
+                                     [2, 3],
+                                     [([[0], [0]], [[0]], 2), ([[1, 1], [1, 1]], [[1]], 3)]
+                             ),
+                             (
+                                     [[[0], None], [[0], None]],
+                                     [[[0], [1]]],
+                                     [2, 3],
+                                     [([[0], [0]], [[0]], 2)]
+                             ),
+                             (
+                                     [[None, [1, 1]], [None, [1, 1]]],
+                                     [[None, None]],
+                                     [2, 3],
+                                     []
+                             ),
                          ])
-def test_parallel_iter(source_iterables, target_iterables, expected):
-    assert list(data_io.parallel_iter(source_iterables, target_iterables)) == expected
+def test_parallel_iter(source_iterables, target_iterables, metadata_iterable, expected):
+    assert list(data_io.parallel_iter(source_iterables, target_iterables, metadata_iterable)) == expected
 
 
 def test_sample_based_define_bucket_batch_sizes():
@@ -282,11 +329,187 @@ def test_max_word_based_define_bucket_batch_sizes(length_ratio, batch_sentences_
         assert bbs.average_target_words_per_batch == expected_average_target_words_per_batch
 
 
-def _get_random_bucketed_data(buckets: List[Tuple[int, int]],
-                              min_count: int,
-                              max_count: int,
-                              bucket_counts: Optional[List[Optional[int]]] = None) -> Tuple[List[torch.Tensor],
-                                                                                            List[torch.Tensor]]:
+def test_compute_slice_indices_from_sequence_lengths():
+    seq_lens = torch.tensor([0, 1, 2, 0, 0, 3, 4, 5, 0])
+    slice_indices = torch.tensor([[0, 0], [0, 1], [1, 3], [3, 3], [3, 3], [3, 6], [6, 10], [10, 15], [15, 15]])
+    assert torch.equal(data_io.compute_slice_indices_from_sequence_lengths(seq_lens), slice_indices)
+
+
+def _compare_metadata_tensors(name_ids1, weights1, slice_indices1, name_ids2, weights2, slice_indices2):
+        # Equal
+        assert name_ids1.dtype == name_ids2.dtype
+        assert torch.equal(name_ids1, name_ids2)
+        # All close
+        assert weights1.dtype == weights2.dtype
+        assert torch.allclose(weights1, weights2)
+        # Equal
+        assert slice_indices1.dtype == slice_indices2.dtype
+        assert torch.equal(slice_indices1, slice_indices2)
+
+
+@pytest.mark.parametrize("metadata_tuple_list,metadata_tensors", [
+    ([(np.array([0], dtype='int32'), np.array([1.], dtype='float32'))],
+     (torch.tensor([0], dtype=torch.int32),
+      torch.tensor([1.], dtype=torch.float32),
+      torch.tensor([[0, 1]], dtype=torch.int64))),
+
+    ([(np.array([1, 2], dtype='int32'), np.array([0.5, 0.5], dtype='float32')),
+      (np.array([0], dtype='int32'), np.array([1.], dtype='float32')),
+      (np.array([3, 4, 5], dtype='int32'), np.array([0.33, 0.33, 0.33], dtype='float32'))],
+     (torch.tensor([1, 2, 0, 3, 4, 5], dtype=torch.int32),
+      torch.tensor([0.5, 0.5, 1., 0.33, 0.33, 0.33], dtype=torch.float32),
+      torch.tensor([[0, 2], [2, 3], [3, 6]], dtype=torch.int64))),
+
+    ([],
+     (torch.zeros(0, dtype=torch.int32),
+      torch.zeros(0, dtype=torch.float32),
+      torch.zeros(0, 2, dtype=torch.int64)))
+])
+def test_metadata_bucket_creation(metadata_tuple_list, metadata_tensors):
+
+    # Test packing and conversion
+    metadata_bucket = data_io.MetadataBucket.from_numpy_tuple_list(metadata_tuple_list)
+    _compare_metadata_tensors(*metadata_bucket.as_tuple(), *metadata_tensors)
+    assert len(metadata_bucket) == len(metadata_tuple_list)
+
+    # Test slicing individual sequences
+    for i, (name_ids_np, weights_np) in enumerate(metadata_tuple_list):
+        name_ids, weights = metadata_bucket.get(i)
+        assert torch.equal(name_ids, torch.tensor(name_ids_np))
+        assert torch.allclose(weights, torch.tensor(weights_np))
+
+    # Test tuple round trip
+    metadata_bucket_rt = data_io.MetadataBucket(*metadata_bucket.as_tuple())
+    _compare_metadata_tensors(*metadata_bucket_rt.as_tuple(), *metadata_tensors)
+
+
+@pytest.mark.parametrize("start,end,expected_batch", [
+    (0, 0, (torch.zeros(0, 0, dtype=torch.int32), torch.zeros(0, 0, dtype=torch.float32))),
+    (0, 1, (torch.tensor([[]], dtype=torch.int32), torch.tensor([[]], dtype=torch.float32))),
+    (0, 2, (torch.tensor([[], []], dtype=torch.int32), torch.tensor([[], []], dtype=torch.float32))),
+    (0, 2, (torch.tensor([[], []], dtype=torch.int32), torch.tensor([[], []], dtype=torch.float32))),
+    (2, 2, (torch.zeros(0, 0, dtype=torch.int32), torch.zeros(0, 0, dtype=torch.float32))),
+    (2, 3, (torch.tensor([[0, 1]], dtype=torch.int32), torch.tensor([[0.5, 0.5]], dtype=torch.float32))),
+    (2, 4, (torch.tensor([[0, 1], [0, C.PAD_ID]], dtype=torch.int32),
+            torch.tensor([[0.5, 0.5], [1., 0.]], dtype=torch.float32))),
+    (2, 5, (torch.tensor([[0, 1, C.PAD_ID, C.PAD_ID],
+                         [0, C.PAD_ID, C.PAD_ID, C.PAD_ID],
+                         [0, 1, 2, 3]], dtype=torch.int32),
+            torch.tensor([[0.5, 0.5, 0., 0.], [1., 0., 0., 0.], [0.25, 0.25, 0.25, 0.25]], dtype=torch.float32))),
+    (5, 8, (torch.tensor([[0, 1, 2, C.PAD_ID, C.PAD_ID],
+                          [C.PAD_ID, C.PAD_ID, C.PAD_ID, C.PAD_ID, C.PAD_ID],
+                          [0, 1, 2, 3, 4]], dtype=torch.int32),
+            torch.tensor([[0.33, 0.33, 0.33, 0., 0.],
+                          [0., 0., 0., 0., 0.],
+                          [0.2, 0.2, 0.2, 0.2, 0.2]], dtype=torch.float32))),
+])
+def test_metadata_bucket_get_batch(start, end, expected_batch):
+    metadata_tuple_list = [
+        (np.array([], dtype='int32'), np.array([], dtype='float32')),
+        (np.array([], dtype='int32'), np.array([], dtype='float32')),
+        (np.array([0, 1], dtype='int32'), np.array([0.5, 0.5], dtype='float32')),
+        (np.array([0], dtype='int32'), np.array([1.], dtype='float32')),
+        (np.array([0, 1, 2, 3], dtype='int32'), np.array([0.25, 0.25, 0.25, 0.25], dtype='float32')),
+        (np.array([0, 1, 2], dtype='int32'), np.array([0.33, 0.33, 0.33], dtype='float32')),
+        (np.array([], dtype='int32'), np.array([], dtype='float32')),
+        (np.array([0, 1, 2, 3, 4], dtype='int32'), np.array([0.2, 0.2, 0.2, 0.2, 0.2], dtype='float32')),
+    ]
+    metadata_bucket = data_io.MetadataBucket.from_numpy_tuple_list(metadata_tuple_list)
+    batch = metadata_bucket.get_batch(start, end)
+    assert batch[0].dtype == expected_batch[0].dtype
+    assert torch.equal(batch[0], expected_batch[0])
+    assert batch[1].dtype == expected_batch[1].dtype
+    assert torch.allclose(batch[1], expected_batch[1])
+
+
+metadata_tuple_lists = [
+    [],
+    [(np.array([0], dtype='int32'), np.array([1.], dtype='float32')),
+     (np.array([0, 1], dtype='int32'), np.array([0.5, 0.5], dtype='float32')),
+     (np.array([0, 1, 2], dtype='int32'), np.array([0.33, 0.33, 0.33], dtype='float32')),
+     (np.array([0, 1, 2, 3], dtype='int32'), np.array([0.25, 0.25, 0.25, 0.25], dtype='float32')),
+     (np.array([0, 1, 2, 3, 4], dtype='int32'), np.array([0.2, 0.2, 0.2, 0.2, 0.2], dtype='float32')),
+    ],
+    [(np.array([], dtype='int32'), np.array([], dtype='float32')),
+     (np.array([0], dtype='int32'), np.array([1.], dtype='float32')),
+     (np.array([0, 1], dtype='int32'), np.array([0.5, 0.5], dtype='float32')),
+     (np.array([0, 1, 2], dtype='int32'), np.array([0.33, 0.33, 0.33], dtype='float32')),
+     (np.array([], dtype='int32'), np.array([], dtype='float32')),
+     (np.array([], dtype='int32'), np.array([], dtype='float32')),
+     (np.array([0, 1, 2, 3, 4], dtype='int32'), np.array([0.2, 0.2, 0.2, 0.2, 0.2], dtype='float32')),
+     (np.array([0, 1, 2, 3], dtype='int32'), np.array([0.25, 0.25, 0.25, 0.25], dtype='float32')),
+     (np.array([0], dtype='int32'), np.array([1.], dtype='float32')),
+     (np.array([], dtype='int32'), np.array([], dtype='float32')),
+    ],
+]
+
+
+@pytest.mark.parametrize("metadata_tuple_list", metadata_tuple_lists)
+def test_metadata_bucket_slice_copy(metadata_tuple_list):
+    metadata_bucket = data_io.MetadataBucket.from_numpy_tuple_list(metadata_tuple_list)
+    # For various slice sizes taken from various positions in the metadata...
+    for slice_size in {0, 1, 2, len(metadata_tuple_list) // 2, len(metadata_tuple_list)}:
+        for start in range(0, len(metadata_tuple_list)):
+            end = start + slice_size
+            # Check that the sliced MetadataBucket is identical to the
+            # MetadataBucket created from the slice of the original tuple list
+            # using the same indices.
+            sliced_metadata_bucket = metadata_bucket.slice_copy(start, end)
+            metadata_bucket_from_slice = data_io.MetadataBucket.from_numpy_tuple_list(metadata_tuple_list[start:end])
+            _compare_metadata_tensors(*sliced_metadata_bucket.as_tuple(), *metadata_bucket_from_slice.as_tuple())
+
+
+@pytest.mark.parametrize("metadata_tuple_list", metadata_tuple_lists)
+def test_metadata_bucket_index_select(metadata_tuple_list):
+    if len(metadata_tuple_list) <= 0:
+        # Cannot select from buckets of size 0
+        return
+    indices = random.choices(range(len(metadata_tuple_list) - 1), k=10)
+    # Test: create MetadataBucket from tuple list and then call index_select
+    metadata_bucket = data_io.MetadataBucket.from_numpy_tuple_list(metadata_tuple_list)
+    selected_metadata_bucket = metadata_bucket.index_select(torch.tensor(indices))
+    # Reference: create tuple list from selected indices and then create
+    # MetadataBucket
+    selected_tuple_list = [metadata_tuple_list[i] for i in indices]
+    metadata_bucket_from_selected = metadata_bucket.from_numpy_tuple_list(selected_tuple_list)
+    _compare_metadata_tensors(*selected_metadata_bucket.as_tuple(), *metadata_bucket_from_selected.as_tuple())
+
+
+@pytest.mark.parametrize("metadata_tuple_list", metadata_tuple_lists)
+def test_metadata_bucket_repeat(metadata_tuple_list):
+    metadata_bucket = data_io.MetadataBucket.from_numpy_tuple_list(metadata_tuple_list)
+    # For various numbers of repeats...
+    for repeats in (0, 1, 2, 5):
+        # Check that the repeated MetadataBucket is identical to the
+        # MetadataBucket created from repeating the original tuple list.
+        repeated_metadata_bucket = metadata_bucket.repeat(repeats)
+        metadata_bucket_from_repeated = data_io.MetadataBucket.from_numpy_tuple_list(metadata_tuple_list * repeats)
+        _compare_metadata_tensors(*repeated_metadata_bucket.as_tuple(), *metadata_bucket_from_repeated.as_tuple())
+
+
+@pytest.mark.parametrize("metadata_tuple_list", metadata_tuple_lists)
+def test_metadata_bucket_fill_up(metadata_tuple_list):
+    if len(metadata_tuple_list) <= 0:
+        # Cannot fill up buckets of size 0
+        return
+    desired_indices = random.choices(range(len(metadata_tuple_list)), k=10)
+    # Test: create MetadataBucket from tuple list and then call fill_up
+    metadata_bucket = data_io.MetadataBucket.from_numpy_tuple_list(metadata_tuple_list)
+    filled_up_metadata_bucket = metadata_bucket.fill_up(torch.tensor(desired_indices))
+    # Reference: fill up tuple list and then create MetadataBucket
+    filled_up_metadata_tuple_list = metadata_tuple_list + [metadata_tuple_list[i] for i in desired_indices]
+    metadata_bucket_from_filled_up = data_io.MetadataBucket.from_numpy_tuple_list(filled_up_metadata_tuple_list)
+    _compare_metadata_tensors(*filled_up_metadata_bucket.as_tuple(), *metadata_bucket_from_filled_up.as_tuple())
+
+
+def _get_random_bucketed_data(
+    buckets: List[Tuple[int, int]],
+    min_count: int,
+    max_count: int,
+    bucket_counts: Optional[List[Optional[int]]] = None,
+    include_metadata: bool = False) -> Tuple[List[torch.Tensor],
+                                             List[torch.Tensor],
+                                             Optional[List[data_io.MetadataBucket]]]:
     """
     Get random bucket data.
 
@@ -294,8 +517,9 @@ def _get_random_bucketed_data(buckets: List[Tuple[int, int]],
     :param min_count: The minimum number of samples that will be sampled if no exact count is given.
     :param max_count: The maximum number of samples that will be sampled if no exact count is given.
     :param bucket_counts: For each bucket an optional exact example count can be given. If it is not given it will be
-                         sampled.
-    :return: The random source and target tensors.
+                          sampled.
+    :param include_metadata: Also generate random metadata (otherwise return None for metadata).
+    :return: The random source and target tensors and optional metadata.
     """
     if bucket_counts is None:
         bucket_counts = [None for _ in buckets]
@@ -305,35 +529,68 @@ def _get_random_bucketed_data(buckets: List[Tuple[int, int]],
               for count, bucket in zip(bucket_counts, buckets)]
     target = [torch.randint(0, 10, (count, random.randint(2, bucket[1]), 1))
               for count, bucket in zip(bucket_counts, buckets)]
-    return source, target
+    metadata = None
+    if include_metadata:
+        metadata = []
+        for count, bucket in zip(bucket_counts, buckets):
+            metadata_tuple_list = []
+            for _ in range(count):
+                name_ids = np.random.randint(0, 10, (random.randint(0, bucket[0]),))
+                weights = np.random.rand(*name_ids.shape)
+                metadata_tuple_list.append((name_ids, weights))
+            metadata.append(data_io.MetadataBucket.from_numpy_tuple_list(metadata_tuple_list))
+    return source, target, metadata
 
 
-def test_parallel_data_set():
+@pytest.mark.parametrize("include_metadata", [False, True])
+def test_parallel_data_set(include_metadata):
     buckets = data_io.define_parallel_buckets(100, 100, 10, True, 1.0)
-    source, target = _get_random_bucketed_data(buckets, min_count=0, max_count=5)
+    source, target, metadata = _get_random_bucketed_data(buckets, min_count=0, max_count=5,
+                                                         include_metadata=include_metadata)
 
     def check_equal(tensors1, tensors2):
         assert len(tensors1) == len(tensors2)
         for a1, a2 in zip(tensors1, tensors2):
             assert torch.equal(a1, a2)
 
+    def check_equal_metadata(metadata1, metadata2):
+        assert len(metadata1) == len(metadata2)
+        for md1, md2 in zip(metadata1, metadata2):
+            assert len(md1) == len(md2)
+            for i in range(len(md1)):
+                name_ids1, weights1 = md1.get(i)
+                name_ids2, weights2 = md2.get(i)
+                assert torch.equal(name_ids1, name_ids2)
+                assert torch.allclose(weights1, weights2)
+
     with TemporaryDirectory() as work_dir:
-        dataset = data_io.ParallelDataSet(source, target)
+        dataset = data_io.ParallelDataSet(source, target, metadata)
         fname = os.path.join(work_dir, 'dataset')
         dataset.save(fname)
         dataset_loaded = data_io.ParallelDataSet.load(fname)
         check_equal(dataset.source, dataset_loaded.source)
         check_equal(dataset.target, dataset_loaded.target)
+        if include_metadata:
+            check_equal_metadata(dataset.metadata, dataset_loaded.metadata)
+        else:
+            # Test backward compatibility: with the legacy format (source/target
+            # only; no metadata)
+            dataset.save(fname, use_legacy_format=True)
+            dataset_loaded = data_io.ParallelDataSet.load(fname)
+            check_equal(dataset.source, dataset_loaded.source)
+            check_equal(dataset.target, dataset_loaded.target)
 
 
-def test_parallel_data_set_fill_up():
+@pytest.mark.parametrize("include_metadata", [False, True])
+def test_parallel_data_set_fill_up(include_metadata):
     batch_size = 32
     buckets = data_io.define_parallel_buckets(100, 100, 10, True, 1.0)
     bucket_batch_sizes = data_io.define_bucket_batch_sizes(buckets,
                                                            batch_size,
                                                            batch_type=C.BATCH_TYPE_SENTENCE,
                                                            data_target_average_len=[None] * len(buckets))
-    dataset = data_io.ParallelDataSet(*_get_random_bucketed_data(buckets, min_count=1, max_count=5))
+    dataset = data_io.ParallelDataSet(*_get_random_bucketed_data(buckets, min_count=1, max_count=5,
+                                                                 include_metadata=include_metadata))
 
     dataset_filled_up = dataset.fill_up(bucket_batch_sizes)
     assert len(dataset_filled_up.source) == len(dataset.source)
@@ -364,14 +621,16 @@ def test_get_permutations():
             assert len(p_set) == 1
 
 
-def test_parallel_data_set_permute():
+@pytest.mark.parametrize("include_metadata", [False, True])
+def test_parallel_data_set_permute(include_metadata):
     batch_size = 5
     buckets = data_io.define_parallel_buckets(100, 100, 10, True, 1.0)
     bucket_batch_sizes = data_io.define_bucket_batch_sizes(buckets,
                                                            batch_size,
                                                            batch_type=C.BATCH_TYPE_SENTENCE,
                                                            data_target_average_len=[None] * len(buckets))
-    dataset = data_io.ParallelDataSet(*_get_random_bucketed_data(buckets, min_count=0, max_count=5)).fill_up(
+    dataset = data_io.ParallelDataSet(*_get_random_bucketed_data(buckets, min_count=0, max_count=5,
+                                                                 include_metadata=include_metadata)).fill_up(
         bucket_batch_sizes)
 
     permutations, inverse_permutations = data_io.get_permutations(dataset.get_bucket_counts())
@@ -384,9 +643,14 @@ def test_parallel_data_set_permute():
         if num_samples:
             assert (dataset.source[buck_idx] == dataset_restored.source[buck_idx]).all()
             assert (dataset.target[buck_idx] == dataset_restored.target[buck_idx]).all()
+            if include_metadata:
+                _compare_metadata_tensors(*dataset.metadata[buck_idx].as_tuple(),
+                                          *dataset_restored.metadata[buck_idx].as_tuple())
         else:
             assert not dataset_restored.source[buck_idx].shape[0]
             assert not dataset_restored.target[buck_idx].shape[0]
+            if include_metadata:
+                assert not len(dataset_restored.metadata[buck_idx])
 
 
 def test_get_batch_indices():

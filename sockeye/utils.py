@@ -17,6 +17,7 @@ A set of utility methods.
 import binascii
 import gzip
 import itertools
+import json
 import logging
 import math
 import multiprocessing
@@ -187,6 +188,28 @@ def get_tokens(line: str) -> Iterator[str]:
     for token in line.rstrip().split():
         if len(token) > 0:
             yield token
+
+
+def json_loads_dict(line: str) -> Dict[Any, Any]:
+    """
+    Load a JSON dictionary from a line. If the line contains only whitespace
+    (including blank lines), an empty dictionary is returned.
+
+    :param line: Line containing a valid JSON dictionary string or whitespace
+                 only.
+    :return: Loaded dictionary.
+    """
+    line = line.strip()
+    if not line:
+        return {}
+    try:
+        _dict = json.loads(line)
+        check_condition(isinstance(_dict, dict),
+                        f'Expected {dict}, got {type(_dict)} when loading JSON line: {line}')
+        return _dict
+    except json.decoder.JSONDecodeError as e:
+        # Raise an error that also includes the undecodable line
+        raise RuntimeError(f'JSONDecodeError: {e.msg} at column {e.colno} (char {e.pos}) for line: {line}')
 
 
 def is_gzip_file(filename: str) -> bool:
