@@ -1302,11 +1302,6 @@ class SequenceReader:
                 sequence.append(self.eos_id)
             yield sequence
 
-class GuidedAlignmentReader(SequenceReader):
-    def __init__(self, path: str, limit: Optional[int] = None) -> None:
-        super().__init__(path, None, False, False, limit)
-
-
 class AlignmentReader:
     """
     Reads JSON alignment lines from path and creates parallel sequences of
