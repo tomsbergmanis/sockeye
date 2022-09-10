@@ -141,6 +141,7 @@ def test_sequence_reader(sequences, use_vocab, add_bos, add_eos):
 
 
 def test_alignment_reader():
+    # TODO MAKE TEST TO READ ALIGNEMNTS
 
     inputs = [r'{"a": 1, "b": 0, "c": 0.5}', r'{}']
     expected_data_no_vocab = [[['a', 'b', 'c'], [1., 0., 0.5]], None]
@@ -151,8 +152,7 @@ def test_alignment_reader():
             for inp in inputs:
                 print(inp, file=f)
 
-        vocabulary = vocab.build_from_paths([path], is_alignment=True)
-        reader = data_io.AlignmentReader(path, vocabulary=vocabulary)
+        reader = data_io.AlignmentReader(path)
 
         read_data = [d for d in reader]
         assert len(read_data) == len(inputs)

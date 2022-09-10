@@ -31,7 +31,7 @@ Vocab = Dict[str, int]
 InverseVocab = Dict[int, str]
 
 
-def count_tokens_for_path(path: str, is_alignment: bool = False) -> Counter:
+def count_tokens_for_path(path: str) -> Counter:
     """
     :param path: Path to file with one sentence per line.
     :param is_alignment: File is JSON alignment that contains one dictionary per
@@ -39,10 +39,10 @@ def count_tokens_for_path(path: str, is_alignment: bool = False) -> Counter:
     :return: Token counter.
     """
     with utils.smart_open(path, mode='rt') as lines:
-        return count_tokens(lines, is_alignment=is_alignment)
+        return count_tokens(lines)
 
 
-def build_from_paths(paths: Iterable[str], is_alignment: bool = False, num_words: Optional[int] = None,
+def build_from_paths(paths: Iterable[str], num_words: Optional[int] = None,
                      min_count: int = 1, pad_to_multiple_of: Optional[int] = None, mapper: Callable = map) -> Vocab:
     """
     Creates a vocabulary mapping from words to ids from shard paths to files in sentence-per-line format.
@@ -58,7 +58,7 @@ def build_from_paths(paths: Iterable[str], is_alignment: bool = False, num_words
     :return: Word-to-id mapping.
     """
     logger.info("Building vocabulary from dataset(s): %s", " ".join(paths)) # type: ignore
-    vocab_counters = mapper(functools.partial(count_tokens_for_path, is_alignment=is_alignment), paths)
+    vocab_counters = mapper(functools.partial(count_tokens_for_path), paths)
     # Combine shard Counters and create a single Vocab
     raw_vocab = sum(vocab_counters, Counter()) # type: Counter
     return build_pruned_vocab(raw_vocab=raw_vocab,
@@ -135,7 +135,7 @@ def build_pruned_vocab(raw_vocab: Counter, num_words: Optional[int] = None, min_
     return word_to_id
 
 
-def count_tokens(data: Iterable[str], is_alignment: bool = False) -> Counter:
+def count_tokens(data: Iterable[str]) -> Counter:
     """
     Count whitespace delimited tokens.
 
@@ -144,8 +144,7 @@ def count_tokens(data: Iterable[str], is_alignment: bool = False) -> Counter:
                         line. Count names (keys).
     :return: Token counter.
     """
-    return Counter(token for line in data for token in (utils.json_loads_dict(line)
-                                                        if is_alignment else utils.get_tokens(line)))
+    return Counter(token for line in data for token in (utils.json_loads_dict(line)))
 
 
 def vocab_to_json(vocab: Vocab, path: str):
@@ -231,16 +230,6 @@ def save_target_vocabs(target_vocabs: List[Vocab], folder: str):
         vocab_to_json(vocab, os.path.join(folder, C.VOCAB_TRG_NAME % i))
 
 
-def save_alignment_vocab(alignment_vocab: Vocab, folder: str):
-    """
-    Saves alignment vocabulary to folder.
-
-    :param alignment_vocab: Alignment vocabulary.
-    :param folder: Destination folder.
-    """
-    vocab_to_json(alignment_vocab, os.path.join(folder, C.VOCAB_ALIGNMENT_NAME))
-
-
 def _get_sorted_source_vocab_fnames(folder) -> List[str]:
     _key = lambda x: int(x.split('.', 3)[-2])
     return sorted([f for f in os.listdir(folder) if f.startswith(C.VOCAB_SRC_PREFIX)], key=_key)
@@ -273,21 +262,8 @@ def load_target_vocabs(folder: str) -> List[Vocab]:
     return [vocab_from_json(os.path.join(folder, fname)) for fname in _get_sorted_target_vocab_fnames(folder)]
 
 
-def load_alignment_vocab(folder: str) -> Optional[Vocab]:
-    """
-    Loads optional alignment vocabulary from folder. Returns None when alignment
-    vocabulary file is not present.
 
-    :param folder: Source folder.
-    :return: Alignment vocabulary or None
-    """
-    fname = os.path.join(folder, C.VOCAB_ALIGNMENT_NAME)
-    if os.path.exists(fname):
-        return vocab_from_json(fname)
-    return None
-
-
-def load_or_create_vocab(data: Iterable[str], vocab_path: Optional[str], is_alignment: bool = False,
+def load_or_create_vocab(data: Iterable[str], vocab_path: Optional[str],
                          num_words: Optional[int] = None, word_min_count: int = 1,
                          pad_to_multiple_of: Optional[int] = None, mapper: Callable = map) -> Vocab:
     """
@@ -297,7 +273,7 @@ def load_or_create_vocab(data: Iterable[str], vocab_path: Optional[str], is_alig
     :param data: Tuple of file paths for each shard.
     """
     if vocab_path is None:
-        return build_from_paths(paths=data, is_alignment=is_alignment, num_words=num_words, min_count=word_min_count,
+        return build_from_paths(paths=data, num_words=num_words, min_count=word_min_count,
                                 pad_to_multiple_of=pad_to_multiple_of, mapper=mapper)
     else:
         return vocab_from_json(vocab_path)
@@ -311,10 +287,8 @@ def load_or_create_vocabs(shard_source_paths: Iterable[Iterable[str]],
                           shared_vocab: bool,
                           num_words_source: Optional[int], word_min_count_source: int,
                           num_words_target: Optional[int], word_min_count_target: int,
-                          shard_alignment_paths: Optional[Iterable[Optional[str]]] = None,
-                          alignment_vocab_path: Optional[str] = None,
                           pad_to_multiple_of: Optional[int] = None,
-                          mapper: Callable = map) -> Tuple[List[Vocab], List[Vocab], Optional[Vocab]]:
+                          mapper: Callable = map) -> Tuple[List[Vocab], List[Vocab]]:
     """
     Returns vocabularies for source files (including factors) and target files (including factors.
     If the respective vocabulary paths are not None, the vocabulary is read from the path and returned.
@@ -331,8 +305,6 @@ def load_or_create_vocabs(shard_source_paths: Iterable[Iterable[str]],
     :param word_min_count_source: Minimum frequency of words in the source vocabulary.
     :param num_words_target: Number of words in the target vocabulary.
     :param word_min_count_target: Minimum frequency of words in the target vocabulary.
-    :param shard_alignment_paths: Optional list of optional JSON alignment shard paths.
-    :param alignment_vocab_path: The optional alignment vocabulary path.
     :param pad_to_multiple_of: If not None, pads the vocabularies to a size that is the next multiple of this int.
     :param mapper: Built-in map function or multiprocessing.pool.map with max_processes processes.
     :return: List of source vocabularies (for source and factors), and target vocabulary.
@@ -435,14 +407,7 @@ def load_or_create_vocabs(shard_source_paths: Iterable[Iterable[str]],
         else:
             vocab_target_factors.append(vocab_target)
 
-    vocab_alignment = None  # type: Vocab
-    # Paths may be None or (None, ...) depending on whether we're using sharding
-    if shard_alignment_paths is not None and None not in shard_alignment_paths:
-        logger.info("(4) Additional alignment vocabulary")
-        vocab_alignment = load_or_create_vocab(shard_alignment_paths, alignment_vocab_path, is_alignment=True,
-                                              pad_to_multiple_of=pad_to_multiple_of, mapper=mapper)
-
-    return [vocab_source] + vocab_source_factors, [vocab_target] + vocab_target_factors, vocab_alignment
+    return [vocab_source] + vocab_source_factors, [vocab_target] + vocab_target_factors
 
 
 def reverse_vocab(vocab: Vocab) -> InverseVocab:

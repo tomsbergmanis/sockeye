@@ -93,6 +93,7 @@ def test_alignment_loss():
         ]
 
     ], dtype=pt.float32, requires_grad=True)
+    # Actual attention we get from head is already soft-maxed
     attention_probs = pt.nn.Softmax(dim=-1)(attention)
 
     # 0-0 1-1 1-3 2-2 3-3 4-4 4-5

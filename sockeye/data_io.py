@@ -567,8 +567,7 @@ def save_shard(shard_idx: int,
                buckets: List[Tuple[int, int]],
                output_prefix: str,
                keep_tmp_shard_files: bool,
-               shard_alignment: Optional[str] = None,
-               alignment_vocab: Optional[vocab.Vocab] = None):
+               shard_alignment: Optional[str] = None):
     """
     Load raw shard source, target and optional JSON alignment files, map to integers using the corresponding
     vocabularies, convert data into tensors and save to disk. Optionally it can delete the source/target files.
@@ -585,7 +584,6 @@ def save_shard(shard_idx: int,
     :param output_prefix: The prefix of the output file name.
     :param keep_tmp_shard_files: Keep the sources/target files when it is True otherwise delete them.
     :param shard_alignment: Optional JSON alignment file name.
-    :param alignment_vocab: Optional alignment vocabulary.
     :return: Shard statistics.
     """
 
@@ -597,8 +595,7 @@ def save_shard(shard_idx: int,
     sources_sentences, targets_sentences = create_sequence_readers(shard_sources, shard_targets, source_vocabs, target_vocabs)
     alignment_sequences = None  # type: Optional[AlignmentReader]
     if shard_alignment is not None:
-        check_condition(alignment_vocab is not None, 'shard_alignment also requires alignment_vocab')
-        alignment_sequences = AlignmentReader(shard_alignment, alignment_vocab)
+        alignment_sequences = AlignmentReader(shard_alignment)
 
     for sources, targets, _ in parallel_iter(sources_sentences, targets_sentences, alignment_sequences):
         source_len = len(sources[0])
@@ -639,7 +636,6 @@ def prepare_data(source_fnames: List[str],
                  bucket_width: int,
                  num_shards: int,
                  output_prefix: str,
-                 alignment_vocab: Optional[vocab.Vocab] = None,
                  bucket_scaling: bool = True,
                  keep_tmp_shard_files: bool = False,
                  pool: multiprocessing.pool.Pool = None,
@@ -652,8 +648,6 @@ def prepare_data(source_fnames: List[str],
     # write vocabularies to data folder
     vocab.save_source_vocabs(source_vocabs, output_prefix)
     vocab.save_target_vocabs(target_vocabs, output_prefix)
-    if alignment_vocab is not None:
-        vocab.save_alignment_vocab(alignment_vocab, output_prefix)
 
     # Get target/source length ratios.
     stats_args = ((source_path, target_path, source_vocabs, target_vocabs, max_seq_len_source, max_seq_len_target)
@@ -684,7 +678,7 @@ def prepare_data(source_fnames: List[str],
     # Process shards in parallel
     args = ((shard_idx, data_loader, shard_sources, shard_targets, source_vocabs, target_vocabs,
              length_statistics.length_ratio_mean, length_statistics.length_ratio_std, buckets, output_prefix,
-             keep_tmp_shard_files, shard_alignment, alignment_vocab)
+             keep_tmp_shard_files, shard_alignment)
             for shard_idx, (shard_sources, shard_targets, shard_alignment) in enumerate(shards))
     per_shard_statistics = pool.starmap(save_shard, args)
 
@@ -788,9 +782,7 @@ def get_validation_data_iter(data_loader: RawParallelDatasetLoader,
                              max_seq_len_source: int,
                              max_seq_len_target: int,
                              batch_size: int,
-                             permute: bool = False,
-                             validation_alignment: Optional[str] = None,
-                             alignment_vocab: Optional[vocab.Vocab] = None) -> 'ParallelSampleIter':
+                             permute: bool = False) -> 'ParallelSampleIter':
     """
     Returns a ParallelSampleIter for the validation data.
     """
@@ -808,10 +800,6 @@ def get_validation_data_iter(data_loader: RawParallelDatasetLoader,
     validation_sources_sentences, validation_targets_sentences = create_sequence_readers(validation_sources,
                                                                                          validation_targets,
                                                                                          source_vocabs, target_vocabs)
-    validation_alignment_sequences = None  # type: Optional[AlignmentReader]
-    if validation_alignment is not None:
-        check_condition(alignment_vocab is not None, 'validation_alignment also requires alignment_vocab')
-        validation_alignment_sequences = AlignmentReader(validation_alignment, alignment_vocab)
 
     validation_data_statistics = get_data_statistics(validation_sources_sentences,
                                                      validation_targets_sentences,
@@ -823,8 +811,7 @@ def get_validation_data_iter(data_loader: RawParallelDatasetLoader,
     validation_data_statistics.log(bucket_batch_sizes)
 
     validation_data = data_loader.load(validation_sources_sentences, validation_targets_sentences,
-                                       validation_data_statistics.num_sents_per_bucket,
-                                       alignment_iterable=validation_alignment_sequences).fill_up(bucket_batch_sizes)
+                                       validation_data_statistics.num_sents_per_bucket).fill_up(bucket_batch_sizes)
 
     return ParallelSampleIter(data=validation_data,
                               buckets=buckets,
@@ -842,13 +829,11 @@ def get_prepared_data_iters(prepared_data_dir: str,
                             batch_size: int,
                             batch_type: str,
                             batch_sentences_multiple_of: int = 1,
-                            permute: bool = True,
-                            validation_alignment: Optional[str] = None) -> Tuple['BaseParallelSampleIter',
-                                                                                'BaseParallelSampleIter',
-                                                                                'DataConfig',
-                                                                                List[vocab.Vocab],
-                                                                                List[vocab.Vocab],
-                                                                                Optional[vocab.Vocab]]:
+                            permute: bool = True) -> Tuple['BaseParallelSampleIter',
+                                                           'BaseParallelSampleIter',
+                                                           'DataConfig',
+                                                           List[vocab.Vocab],
+                                                           List[vocab.Vocab]]:
     logger.info("===============================")
     logger.info("Creating training data iterator")
     logger.info("===============================")
@@ -881,7 +866,6 @@ def get_prepared_data_iters(prepared_data_dir: str,
 
     source_vocabs = vocab.load_source_vocabs(prepared_data_dir)
     target_vocabs = vocab.load_target_vocabs(prepared_data_dir)
-    alignment_vocab = vocab.load_alignment_vocab(prepared_data_dir)
 
     check_condition(len(source_vocabs) == len(data_info.sources),
                     "Wrong number of source vocabularies. Found %d, need %d." % (len(source_vocabs),
@@ -919,18 +903,16 @@ def get_prepared_data_iters(prepared_data_dir: str,
     validation_iter = get_validation_data_iter(data_loader=data_loader,
                                                validation_sources=validation_sources,
                                                validation_targets=validation_targets,
-                                               validation_alignment=validation_alignment,
                                                buckets=buckets,
                                                bucket_batch_sizes=bucket_batch_sizes,
                                                source_vocabs=source_vocabs,
                                                target_vocabs=target_vocabs,
-                                               alignment_vocab=alignment_vocab,
                                                max_seq_len_source=max_seq_len_source,
                                                max_seq_len_target=max_seq_len_target,
                                                batch_size=batch_size,
                                                permute=False)
 
-    return train_iter, validation_iter, config_data, source_vocabs, target_vocabs, alignment_vocab
+    return train_iter, validation_iter, config_data, source_vocabs, target_vocabs
 
 
 def get_training_data_iters(sources: List[str],
@@ -952,9 +934,7 @@ def get_training_data_iters(sources: List[str],
                             allow_empty: bool = False,
                             batch_sentences_multiple_of: int = 1,
                             permute: bool = True,
-                            alignment: Optional[str] = None,
-                            validation_alignment: Optional[str] = None,
-                            alignment_vocab: Optional[vocab.Vocab] = None) -> Tuple['BaseParallelSampleIter', Optional['BaseParallelSampleIter'],
+                            alignment: Optional[str] = None) -> Tuple['BaseParallelSampleIter', Optional['BaseParallelSampleIter'],
                                                            'DataConfig', 'DataInfo']:
     """
     Returns data iterators for training and validation data.
@@ -980,8 +960,6 @@ def get_training_data_iters(sources: List[str],
         bucket's batch to a multiple of this value (word-based batching only).
     :param permute: Randomly shuffle the parallel data.
     :param alignment: Optional path to training alignment.
-    :param validation_alignment: Optional path to validation alignment.
-    :param alignment_vocab: Vocabulary for alignment (if specified) or None.
     :return: Tuple of (training data iterator, validation data iterator, data config).
     """
     logger.info("===============================")
@@ -1003,9 +981,8 @@ def get_training_data_iters(sources: List[str],
 
     sources_sentences, targets_sentences = create_sequence_readers(sources, targets, source_vocabs, target_vocabs)
     alignment_sequences = None  # type: Optional[AlignmentReader]
-    if (alignment is not None) or (validation_alignment is not None):
-        check_condition(alignment_vocab is not None, 'alignment and validation_alignment also require alignment_vocab')
-        alignment_sequences = AlignmentReader(alignment, alignment_vocab)
+    if alignment is not None:
+        alignment_sequences = AlignmentReader(alignment)
 
     # Pass 2: Get data statistics and determine the number of data points for each bucket.
     data_statistics = get_data_statistics(sources_sentences, targets_sentences, buckets,
@@ -1055,12 +1032,10 @@ def get_training_data_iters(sources: List[str],
     validation_iter = get_validation_data_iter(data_loader=data_loader,
                                                validation_sources=validation_sources,
                                                validation_targets=validation_targets,
-                                               validation_alignment=validation_alignment,
                                                buckets=buckets,
                                                bucket_batch_sizes=bucket_batch_sizes,
                                                source_vocabs=source_vocabs,
                                                target_vocabs=target_vocabs,
-                                               alignment_vocab=alignment_vocab,
                                                max_seq_len_source=max_seq_len_source,
                                                max_seq_len_target=max_seq_len_target,
                                                batch_size=batch_size,
@@ -1302,7 +1277,8 @@ class SequenceReader:
                 sequence.append(self.eos_id)
             yield sequence
 
-class GuidedAlignmentReader(SequenceReader):
+
+class AlignmentReader(SequenceReader):
     def __init__(self, path: str, limit: Optional[int] = None) -> None:
         super().__init__(path, None, False, False, limit)
     def __iter__(self):
@@ -1312,42 +1288,11 @@ class GuidedAlignmentReader(SequenceReader):
                 return [int(src), int(trg)]
             yield map(transform, alignments)
 
-class AlignmentReader:
-    """
-    Reads JSON alignment lines from path and creates parallel sequences of
-    integer name ids and float weights. Streams from disk, instead of loading
-    all samples into memory. Empty sequences are yielded as None.
-
-    :param path: Path to read JSON alignment from.
-    :param vocabulary: Mapping from strings to integer ids.
-    :param limit: Read limit.
-    """
-
-    def __init__(self,
-                 path: str,
-                 vocabulary: vocab.Vocab,
-                 limit: Optional[int] = None) -> None:
-        self.path = path
-        self.vocab = vocabulary
-        self.limit = limit
-
-    def __iter__(self):
-        with smart_open(self.path) as indata:
-            for i, line in enumerate(indata):
-                if self.limit is not None and i == self.limit:
-                    break
-                data = utils.json_loads_dict(line)
-                if len(data) == 0:
-                    yield None
-                    continue
-                names, weights = zip(*data.items())
-                yield [tokens2ids(names, self.vocab), list(float(value) for value in weights)]
-
 
 def create_sequence_readers(sources: List[str], targets: List[str],
                             vocab_sources: List[vocab.Vocab],
                             vocab_targets: List[vocab.Vocab]) \
-        -> Tuple[List[SequenceReader], List[SequenceReader], SequenceReader]:
+        -> Tuple[List[SequenceReader], List[SequenceReader]]:
     """
     Create source readers with EOS and target readers with BOS.
 
@@ -1358,9 +1303,9 @@ def create_sequence_readers(sources: List[str], targets: List[str],
     :return: The source sequence readers and the target reader.
     """
     source_sequence_readers = [SequenceReader(source, vocab, add_eos=True) for source, vocab in
-                                zip(sources, vocab_sources)]
+                               zip(sources, vocab_sources)]
     target_sequence_readers = [SequenceReader(target, vocab, add_bos=True) for target, vocab in
-                                zip(targets, vocab_targets)]
+                               zip(targets, vocab_targets)]
 
     return source_sequence_readers, target_sequence_readers
 
