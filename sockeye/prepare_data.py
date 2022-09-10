@@ -77,22 +77,22 @@ def prepare_data(args: argparse.Namespace):
                 % (num_sents, num_shards, samples_per_shard, minimum_num_shards))
     shards, keep_tmp_shard_files = data_io.create_shards(source_fnames=source_paths,
                                                          target_fnames=target_paths,
-                                                         metadata_fname=args.metadata,
+                                                         alignment_fname=args.alignment,
                                                          num_shards=num_shards,
                                                          output_prefix=output_folder)
-    shard_source_paths, shard_target_paths, shard_metadata_paths = [paths for paths in zip(*shards)]
+    shard_source_paths, shard_target_paths, shard_alignment_paths = [paths for paths in zip(*shards)]
 
     # Process shards in parallel using max_processes process
     with utils.create_pool(args.max_processes) as pool:
-        source_vocabs, target_vocabs, metadata_vocab = vocab.load_or_create_vocabs(
+        source_vocabs, target_vocabs, alignment_vocab = vocab.load_or_create_vocabs(
             shard_source_paths=shard_source_paths,
             source_factor_vocab_same_as_source=args.source_factors_use_source_vocab,
             target_factor_vocab_same_as_target=args.target_factors_use_target_vocab,
             shard_target_paths=shard_target_paths,
-            shard_metadata_paths=shard_metadata_paths,
+            shard_alignment_paths=shard_alignment_paths,
             source_vocab_paths=source_vocab_paths,
             target_vocab_paths=target_vocab_paths,
-            metadata_vocab_path=args.metadata_vocab,
+            alignment_vocab_path=args.alignment_vocab,
             shared_vocab=args.shared_vocab,
             num_words_source=num_words_source,
             word_min_count_source=word_min_count_source,
@@ -105,7 +105,7 @@ def prepare_data(args: argparse.Namespace):
                              target_fnames=target_paths,
                              source_vocabs=source_vocabs,
                              target_vocabs=target_vocabs,
-                             metadata_vocab=metadata_vocab,
+                             alignment_vocab=alignment_vocab,
                              source_vocab_paths=source_vocab_paths,
                              target_vocab_paths=[args.target_vocab],
                              shared_vocab=args.shared_vocab,

@@ -20,17 +20,6 @@ from sockeye.vocab import (build_vocab, get_ordered_tokens_from_vocab, is_valid_
     _get_sorted_source_vocab_fnames, count_tokens)
 
 
-def test_count_tokens():
-    expected = Counter({"a": 1, "b": 1, "c": 2, "d": 1, "e": 1})
-    # Plain text
-    data = ["a b c", "c d e"]
-    raw_vocab = count_tokens(data)
-    assert raw_vocab == expected
-    # JSON metadata
-    metadata = ['{"a": 1, "b": 2, "c": 3}', '{"c": 4, "d": 5, "e": 6}']
-    raw_vocab = count_tokens(metadata, is_metadata=True)
-    assert raw_vocab == expected
-
 
 test_vocab = [
         # Example 1
