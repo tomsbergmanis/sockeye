@@ -598,7 +598,7 @@ def save_shard(shard_idx: int,
     metadata_sequences = None  # type: Optional[MetadataReader]
     if shard_metadata is not None:
         check_condition(metadata_vocab is not None, 'shard_metadata also requires metadata_vocab')
-        metadata_sequences = MetadataReader(shard_metadata, metadata_vocab)
+        metadata_sequences = GuidedAlignmentReader(shard_metadata, metadata_vocab)
 
     for sources, targets, _ in parallel_iter(sources_sentences, targets_sentences, metadata_sequences):
         source_len = len(sources[0])
@@ -811,7 +811,7 @@ def get_validation_data_iter(data_loader: RawParallelDatasetLoader,
     validation_metadata_sequences = None  # type: Optional[MetadataReader]
     if validation_metadata is not None:
         check_condition(metadata_vocab is not None, 'validation_metadata also requires metadata_vocab')
-        validation_metadata_sequences = MetadataReader(validation_metadata, metadata_vocab)
+        validation_metadata_sequences = GuidedAlignmentReader(validation_metadata, metadata_vocab)
 
     validation_data_statistics = get_data_statistics(validation_sources_sentences,
                                                      validation_targets_sentences,
@@ -1005,7 +1005,7 @@ def get_training_data_iters(sources: List[str],
     metadata_sequences = None  # type: Optional[MetadataReader]
     if (metadata is not None) or (validation_metadata is not None):
         check_condition(metadata_vocab is not None, 'metadata and validation_metadata also require metadata_vocab')
-        metadata_sequences = MetadataReader(metadata, metadata_vocab)
+        metadata_sequences = GuidedAlignmentReader(metadata, metadata_vocab)
 
     # Pass 2: Get data statistics and determine the number of data points for each bucket.
     data_statistics = get_data_statistics(sources_sentences, targets_sentences, buckets,
@@ -1301,11 +1301,6 @@ class SequenceReader:
             if self.add_eos:
                 sequence.append(self.eos_id)
             yield sequence
-
-class GuidedAlignmentReader(SequenceReader):
-    def __init__(self, path: str, limit: Optional[int] = None) -> None:
-        super().__init__(path, None, False, False, limit)
-
 
 class GuidedAlignmentReader:
     """
