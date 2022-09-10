@@ -1305,30 +1305,22 @@ class SequenceReader:
 class GuidedAlignmentReader(SequenceReader):
     def __init__(self, path: str, limit: Optional[int] = None) -> None:
         super().__init__(path, None, False, False, limit)
-    def __iter__(self):
-        for alignments in read_content(self.path, self.limit):
-            def transform(align : str) -> List[int]:
-                src, trg = align.split('-')
-                return [int(src), int(trg)]
-            yield map(transform, alignments)
 
-class MetadataReader:
+
+class GuidedAlignmentReader:
     """
-    Reads JSON metadata lines from path and creates parallel sequences of
-    integer name ids and float weights. Streams from disk, instead of loading
+    Reads JSON alignment lines from path and creates sequences of
+    integer [src,trg] alignments. Streams from disk, instead of loading
     all samples into memory. Empty sequences are yielded as None.
 
-    :param path: Path to read JSON metadata from.
-    :param vocabulary: Mapping from strings to integer ids.
+    :param path: Path to read JSON alignments from.
     :param limit: Read limit.
     """
 
     def __init__(self,
                  path: str,
-                 vocabulary: vocab.Vocab,
                  limit: Optional[int] = None) -> None:
         self.path = path
-        self.vocab = vocabulary
         self.limit = limit
 
     def __iter__(self):
@@ -1342,7 +1334,13 @@ class MetadataReader:
                     continue
                 names, weights = zip(*data.items())
                 yield [tokens2ids(names, self.vocab), list(float(value) for value in weights)]
-
+    def __iter__(self):
+        with smart_open(self.path) as indata:
+            for i, line in enumerate(indata):
+                def transform(align : str) -> List[int]:
+                    src, trg = align.split('-')
+                    return [int(src), int(trg)]
+                yield map(transform, line)
 
 def create_sequence_readers(sources: List[str], targets: List[str],
                             vocab_sources: List[vocab.Vocab],
