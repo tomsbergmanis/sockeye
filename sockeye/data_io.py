@@ -233,7 +233,7 @@ def analyze_sequence_lengths(sources: List[str],
                              vocab_targets: List[vocab.Vocab],
                              max_seq_len_source: int,
                              max_seq_len_target: int) -> 'LengthStatistics':
-    train_sources_sentences, train_targets_sentences, _ = create_sequence_readers(sources, targets,
+    train_sources_sentences, train_targets_sentences = create_sequence_readers(sources, targets,
                                                                                vocab_sources, vocab_targets)
 
     length_statistics = calculate_length_statistics(train_sources_sentences, train_targets_sentences,
@@ -518,10 +518,10 @@ class RawParallelDatasetLoader:
                     data_target[buck_index][sample_index, 0:target_len + 1, i] = t
             if alignment_iterable is not None:
                 # Tuple of alignment (name_ids, weights)
-                alignment_lists[buck_index].append((
-                    np.array(alignment[0] if alignment is not None else [], dtype=self.dtype),
-                    np.array(alignment[1] if alignment is not None else [], dtype='float32'),
-                ))
+                # TODO FIX THIS ALIGNMENT PACKING
+                alignment_lists[buck_index].append(
+                    np.array(list(alignment) if alignment is not None else [], dtype='int32')
+                )
 
             bucket_sample_index[buck_index] += 1
 
@@ -1299,6 +1299,7 @@ class AlignmentReader:
             for i, alignments in enumerate(indata):
                 if self.limit is not None and i == self.limit:
                     break
+                alignments = alignments.split()
                 def transform(align: str) -> List[int]:
                     src, trg = align.split('-')
                     return [int(src), int(trg)]

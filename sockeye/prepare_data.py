@@ -77,7 +77,7 @@ def prepare_data(args: argparse.Namespace):
                 % (num_sents, num_shards, samples_per_shard, minimum_num_shards))
     shards, keep_tmp_shard_files = data_io.create_shards(source_fnames=source_paths,
                                                          target_fnames=target_paths,
-                                                         alignment_fname=args.alignment,
+                                                         alignment_fname=args.guided_alignments,
                                                          num_shards=num_shards,
                                                          output_prefix=output_folder)
     shard_source_paths, shard_target_paths, shard_alignment_paths = [paths for paths in zip(*shards)]

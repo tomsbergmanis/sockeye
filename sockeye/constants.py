@@ -188,6 +188,7 @@ ARGS_MAY_DIFFER = ["device_id", "device_ids", "overwrite_output", "use_tensorboa
 # Other argument constants
 TRAINING_ARG_SOURCE = "--source"
 TRAINING_ARG_TARGET = "--target"
+TRAINING_ARG_ALIGNMENT = "--guided-alignments"
 TRAINING_ARG_PREPARED_DATA = "--prepared-data"
 TRAINING_ARG_MAX_SEQ_LEN = "--max-seq-len"
 

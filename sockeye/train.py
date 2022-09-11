@@ -300,7 +300,7 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
                                                                          C.TRAINING_ARG_ALIGNMENT,
                                                                          C.TRAINING_ARG_PREPARED_DATA)
     if args.prepared_data is not None:
-        utils.check_condition(args.source is None and args.target is None and args.alignment is None,
+        utils.check_condition(args.source is None and args.target is None and args.guided_alignments is None,
                               either_raw_or_prepared_error_msg)
         if not resume_training:
             utils.check_condition(args.source_vocab is None and
@@ -375,7 +375,6 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
             source_vocabs, target_vocabs = vocab.load_or_create_vocabs(
                 shard_source_paths=[[args.source] + args.source_factors],
                 shard_target_paths=[[args.target] + args.target_factors],
-                shard_alignment_paths=[args.alignment] if args.alignment is not None else None,
                 source_vocab_paths=source_vocab_paths,
                 source_factor_vocab_same_as_source=args.source_factors_share_embedding,
                 target_vocab_paths=target_vocab_paths,
@@ -402,7 +401,7 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
         sources = [str(os.path.abspath(s)) for s in sources]
         targets = [args.target] + args.target_factors
         targets = [str(os.path.abspath(t)) for t in targets]
-        alignment = os.path.abspath(args.alignment) if args.alignment is not None else None
+        alignment = os.path.abspath(args.guided_alignments) if args.guided_alignments is not None else None
 
 
         check_condition(len(sources) == len(validation_sources),
@@ -430,7 +429,7 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
             bucket_width=args.bucket_width,
             bucket_scaling=args.bucket_scaling,
             batch_sentences_multiple_of=args.batch_sentences_multiple_of,
-            guided_alignments=args.guided_alignments)
+            alignment=alignment)
 
         data_info_fname = os.path.join(output_folder, C.DATA_INFO)
         logger.info("Writing data config to '%s'", data_info_fname)
@@ -768,11 +767,11 @@ def create_losses(args: argparse.Namespace, all_num_classes: List[int]) -> List[
                                                   label_name=C.TARGET_LABEL_NAME,
                                                   metric_prefix="bow")
         losses.append(bow_loss)
-    if args.guided_alignments:
+    if args.guided_alignmentss:
         guided_alignment_loss = loss.AlignmentCrossEntropyLoss(name="alignment_ce",
                                                                output_name=C.ATTENTION_NAME % args.transformer_guided_alignment_layer,
                                                                head=args.transformer_guided_alignment_head,
-                                                               weight=args.guided_alignment_weight,
+                                                               weight=args.guided_alignments_weight,
                                                                label_name=C.ALIGNMENT_LABEL_NAME)
         losses.append(guided_alignment_loss)
     return losses

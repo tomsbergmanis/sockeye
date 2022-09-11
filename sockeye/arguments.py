@@ -443,7 +443,7 @@ def add_training_data_args(params, required=False):
                         help='Target side of parallel training data.')
 
 def add_guided_alignment_args(params, required=False):
-    params.add_argument('--guided-alignments',
+    params.add_argument(C.TRAINING_ARG_ALIGNMENT,
                         required=False,
                         type=regular_file(),
                         default=[],

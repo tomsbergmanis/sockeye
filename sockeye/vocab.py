@@ -144,7 +144,7 @@ def count_tokens(data: Iterable[str]) -> Counter:
                         line. Count names (keys).
     :return: Token counter.
     """
-    return Counter(token for line in data for token in (utils.json_loads_dict(line)))
+    return Counter(token for line in data for token in utils.get_tokens(line))
 
 
 def vocab_to_json(vocab: Vocab, path: str):
