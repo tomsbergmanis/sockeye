@@ -517,8 +517,6 @@ class RawParallelDatasetLoader:
                     t.insert(0, C.BOS_ID)
                     data_target[buck_index][sample_index, 0:target_len + 1, i] = t
             if alignment_iterable is not None:
-                # Tuple of alignment (name_ids, weights)
-                # TODO FIX THIS ALIGNMENT PACKING
                 alignment_lists[buck_index].append(
                     np.array(list(alignment) if alignment is not None else [], dtype='int32')
                 )
@@ -1497,13 +1495,12 @@ class AlignmentBucket:
         :return: AlignmentBucket containing packed tensors and slice indices.
         """
         if len(alignment_list) == 0:
-            return AlignmentBucket(name_ids=torch.zeros(0, dtype=torch.int32),
-                                   weights=torch.zeros(0, dtype=torch.float32),
+            return AlignmentBucket(alignments=torch.zeros(0, 2, dtype=torch.int32),
                                    slice_indices=torch.zeros(0, 2, dtype=torch.int64))
-        #name_ids_list, weights_list = zip(*((name_ids, weights) for name_ids, weights in alignment_tuple_list))
+
         seq_lens = torch.tensor([alignments.shape[0] for alignments in alignment_list], dtype=torch.int64)
         slice_indices = compute_slice_indices_from_sequence_lengths(seq_lens)
-        # name_ids = torch.from_numpy(np.concatenate(name_ids_list))
+
         # remove empy alignments as it is not possible to use np.concatenate on empty arrays
         alignment_list = [alignment for alignment in alignment_list if 0 not in alignment.shape]
         alignments = torch.from_numpy(np.concatenate(alignment_list))
@@ -1516,34 +1513,32 @@ class AlignmentBucket:
     def __repr__(self) -> str:
         return f'AlignmentBucket{self.as_tuple()}'
 
-    def as_tuple(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def as_tuple(self) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Return a tuple view of the stored alignment.
         """
-        return (self.name_ids, self.weights, self.slice_indices)
+        return self.alignments, self.slice_indices
 
-    def get(self, i: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get(self, i: int) -> torch.Tensor:
         """
-        Get parallel name IDs and weights for a single sequence from the packed
+        Get alignment for a single sequence from the packed
         alignment.
 
         :param i: Sequence index.
         :returns: Tuple of name ID and weight sequence tensors.
         """
         start, end = self.slice_indices[i]
-        return (self.name_ids[start:end], self.weights[start:end])
+        return self.alignments[start:end]
 
-    def get_batch(self, start: int, end: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_batch(self, start: int, end: int) -> torch.Tensor:
         """
-        Get a padded batch of name ID and weight tensors corresponding to a
-        slice of the alignment.
+        Get a padded batch of alignment tensor corresponding to a slice of the alignment.
 
         :param start: Positive start index.
         :param end: Positive end index greater than or equal to start index.
-        :returns: Tuple of padded name ID and weight batch tensors that each
-                  have shape (batch_size, max_seq_len) where `batch_size` is
-                  `end` - `start` and `max_seq_len` is the length of the longest
-                  sequence in the batch.
+        :returns: Padded alignment tensor that has shape (batch_size, max_seq_len)
+                  where `batch_size` is `end` - `start` and `max_seq_len` is
+                  the length of the longest sequence in the batch.
         """
         check_condition(0 <= start <= end,
                         'Alignment batch creation only supports positive indices for which start <= end. '
@@ -1553,12 +1548,12 @@ class AlignmentBucket:
         slice_indices = torch.index_select(self.slice_indices, 0, torch.arange(start, end))
         seq_lens = slice_indices[:, 1] - slice_indices[:, 0]
         max_seq_len = torch.max(seq_lens)
-        name_ids_batch = torch.full((slice_indices.shape[0], max_seq_len), C.PAD_ID, dtype=torch.int32)  # type: ignore
-        weights_batch = torch.full((slice_indices.shape[0], max_seq_len), 0., dtype=torch.float32)  # type: ignore
+        alignment_batch = torch.full((slice_indices.shape[0], max_seq_len), C.PAD_ID, dtype=torch.int32)  # type: ignore
+
         for i, ((_start, _end), seq_len) in enumerate(zip(slice_indices, seq_lens)):
-            name_ids_batch[i, 0:seq_len] = self.name_ids[_start:_end]
-            weights_batch[i, 0:seq_len] = self.weights[_start:_end]
-        return name_ids_batch, weights_batch
+            alignment_batch[i, 0:seq_len] = self.name_ids[_start:_end]
+
+        return alignment_batch
 
     def slice_copy(self, start: int, end: int) -> 'AlignmentBucket':
         """
@@ -1571,15 +1566,13 @@ class AlignmentBucket:
         check_condition(0 <= start <= end,
                         f'Alignment slicing only supports positive indices for which start <= end. Got: {start} {end}')
         if start == end:
-            return AlignmentBucket(name_ids=torch.zeros(0, dtype=torch.int32),
-                                   weights=torch.zeros(0, dtype=torch.float32),
+            return AlignmentBucket(alignments=torch.zeros(0,0, dtype=torch.int32),
                                    slice_indices=torch.zeros(0, 2, dtype=torch.int64))
         slice_indices = self.slice_indices[start:end].clone()
-        name_ids = self.name_ids[slice_indices[0, 0]:slice_indices[-1, 1]].clone()  # type: ignore
-        weights = self.weights[slice_indices[0, 0]:slice_indices[-1, 1]].clone()  # type: ignore
+        alignments = self.alignments[slice_indices[0, 0]:slice_indices[-1, 1]].clone()  # type: ignore
         # Offset by starting point in packed alignment
         slice_indices -= self.slice_indices[start, 0]
-        return AlignmentBucket(name_ids=name_ids, weights=weights, slice_indices=slice_indices)
+        return AlignmentBucket(alignments=alignments, slice_indices=slice_indices)
 
     def index_select(self, indices: torch.Tensor) -> 'AlignmentBucket':
         """
@@ -1591,12 +1584,11 @@ class AlignmentBucket:
         """
         check_condition(indices.ndim == 1, 'Indices should be specified as a 1-D tensor')
         slice_indices = torch.index_select(self.slice_indices, 0, indices)
-        name_ids = torch.cat([self.name_ids[start:end] for start, end in slice_indices], dim=0)
-        weights = torch.cat([self.weights[start:end] for start, end in slice_indices], dim=0)
+        alignments = torch.cat([self.alignments[start:end] for start, end in slice_indices], dim=0)
         seq_lens = slice_indices[:, 1] - slice_indices[:, 0]
         # Recompute slice indices for selected/packed alignment
         slice_indices = compute_slice_indices_from_sequence_lengths(seq_lens)
-        return AlignmentBucket(name_ids=name_ids, weights=weights, slice_indices=slice_indices)
+        return AlignmentBucket(alignments=alignments, slice_indices=slice_indices)
 
     def repeat(self, repeats: int) -> 'AlignmentBucket':
         """
@@ -1608,15 +1600,14 @@ class AlignmentBucket:
         check_condition(repeats >= 0,
                         f'Alignment cannot be repeated a negative number of times. Got: {repeats}')
         if repeats == 0:
-            return AlignmentBucket(name_ids=torch.zeros(0, dtype=torch.int32),
-                                   weights=torch.zeros(0, dtype=torch.float32),
+            return AlignmentBucket(alignments=torch.zeros(0, 2, dtype=torch.int32),
                                    slice_indices=torch.zeros(0, 2, dtype=torch.int64))
-        name_ids = self.name_ids.repeat(repeats)
-        weights = self.weights.repeat(repeats)
+        alignments = self.alignments.repeat(repeats)
+
         # Each copy of the indices is offset by its copy number times the
         # size of the packed alignment
-        slice_indices = torch.cat([self.slice_indices + i * self.name_ids.shape[0] for i in range(repeats)], dim=0)
-        return AlignmentBucket(name_ids=name_ids, weights=weights, slice_indices=slice_indices)
+        slice_indices = torch.cat([self.slice_indices + i * self.alignments.shape[0] for i in range(repeats)], dim=0)
+        return AlignmentBucket(alignments=alignments, slice_indices=slice_indices)
 
     def fill_up(self, desired_indices: torch.Tensor) -> 'AlignmentBucket':
         """
@@ -1627,11 +1618,10 @@ class AlignmentBucket:
         :returns: Filled-up AlignmentBucket.
         """
         check_condition(len(self) > 0, 'Cannot fill up an empty AlignmentBucket (no examples to copy)')
-        name_ids, weights, slice_indices = self.index_select(desired_indices).as_tuple()
+        alignments, slice_indices = self.index_select(desired_indices).as_tuple()
         # Offset by size of existing packed alignment
-        slice_indices += self.name_ids.shape[0]
-        return AlignmentBucket(name_ids=torch.cat((self.name_ids, name_ids), dim=0),
-                               weights=torch.cat((self.weights, weights), dim=0),
+        slice_indices += self.alignments.shape[0]
+        return AlignmentBucket(name_ids=torch.cat((self.alignments, alignments), dim=0),
                                slice_indices=torch.cat((self.slice_indices, slice_indices), dim=0))
 
 
