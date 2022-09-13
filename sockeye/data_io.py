@@ -261,7 +261,7 @@ def are_token_parallel(sequences: Sequence[Sized]) -> bool:
     Returns True if all sequences in the list have the same length.
     """
     if not sequences or len(sequences) == 1:
-            return True
+        return True
     else:
         return all(len(s) == len(sequences[0]) for s in sequences)
 
@@ -395,9 +395,9 @@ def create_shards(source_fnames: List[str],
 
         random_shard_iter = iter(lambda: random.randrange(num_shards), None)
         for (sources, targets, alignment), random_shard_index in zip(parallel_iter(source_readers, target_readers,
-                                                                                  alignment_reader, skip_blanks=True,
-                                                                                  check_token_parallel=False),
-                                                                    random_shard_iter):
+                                                                                   alignment_reader, skip_blanks=True,
+                                                                                   check_token_parallel=False),
+                                                                     random_shard_iter):
             random_shard_index = cast(int, random_shard_index)
             for i, line in enumerate(sources):
                 file = sources_shards[i][random_shard_index]
@@ -473,7 +473,7 @@ class RawParallelDatasetLoader:
         data_target = [np.full((num_samples, target_len + 1, num_target_factors), self.pad_id, dtype=self.dtype)
                        for (_, target_len), num_samples in zip(self.buckets, num_samples_per_bucket)]
         alignment_lists = [[] for _ in self.buckets] if alignment_iterable is not None \
-                          else None  # type: Optional[List[List[Tuple[np.ndarray, np.ndarray]]]]
+            else None  # type: Optional[List[List[Tuple[np.ndarray, np.ndarray]]]]
 
         bucket_sample_index = [0 for _ in self.buckets]
 
@@ -486,7 +486,7 @@ class RawParallelDatasetLoader:
         # Bucket sentences as padded np arrays, alignment as tuples of tensors
         # (name_ids, weights)
         for sources, targets, alignment in parallel_iter(source_iterables, target_iterables, alignment_iterable,
-                                                        skip_blanks=self.skip_blanks):
+                                                         skip_blanks=self.skip_blanks):
             sources = [[] if stream is None else stream for stream in sources]
             targets = [[] if stream is None else stream for stream in targets]
             source_len = len(sources[0])
@@ -533,8 +533,9 @@ class RawParallelDatasetLoader:
         # Convert from NumPy arrays to Pytorch tensors
         data_source_tensors = [torch.from_numpy(data) for data in data_source]
         data_target_tensors = [torch.from_numpy(data) for data in data_target]
-        alignment_buckets = [AlignmentBucket.from_numpy_tuple_list(alignment_list) for alignment_list in alignment_lists] \
-                           if alignment_iterable is not None else None
+        alignment_buckets = [AlignmentBucket.from_numpy_tuple_list(alignment_list)
+                             for alignment_list in alignment_lists] \
+            if alignment_iterable is not None else None
 
         if num_tokens_source > 0 and num_tokens_target > 0:
             logger.info("Created bucketed parallel data set. Introduced padding: source=%.1f%% target=%.1f%%)",
@@ -592,7 +593,8 @@ def save_shard(shard_idx: int,
                                                        length_ratio_mean, length_ratio_std)
     # TODO: add guided_alignment handling
     # Shards contain the raw sentences. Need to map to integers using the vocabs and add BOS/EOS
-    sources_sentences, targets_sentences = create_sequence_readers(shard_sources, shard_targets, source_vocabs, target_vocabs)
+    sources_sentences, targets_sentences = create_sequence_readers(shard_sources, shard_targets, source_vocabs,
+                                                                   target_vocabs)
     alignment_sequences = None  # type: Optional[AlignmentReader]
     if shard_alignment is not None:
         alignment_sequences = AlignmentReader(shard_alignment)
@@ -686,7 +688,7 @@ def prepare_data(source_fnames: List[str],
     shard_average_len = [shard_stats.average_len_target_per_bucket for shard_stats in per_shard_statistics]
     shard_num_sents = [shard_stats.num_sents_per_bucket for shard_stats in per_shard_statistics]
     num_sents_per_bucket = [sum(n) for n in zip(*shard_num_sents)]
-    average_len_target_per_bucket = [] # type: List[Optional[float]]
+    average_len_target_per_bucket = []  # type: List[Optional[float]]
     for num_sents_bucket, average_len_bucket in zip(zip(*shard_num_sents), zip(*shard_average_len)):
         if all(avg is None for avg in average_len_bucket):
             average_len_target_per_bucket.append(None)
@@ -694,7 +696,7 @@ def prepare_data(source_fnames: List[str],
             average_len_target_per_bucket.append(combine_means(average_len_bucket, shards_num_sents))
 
     shard_length_ratios = [shard_stats.length_ratio_stats_per_bucket for shard_stats in per_shard_statistics]
-    length_ratio_stats_per_bucket = [] # type: Optional[List[Tuple[Optional[float], Optional[float]]]]
+    length_ratio_stats_per_bucket = []  # type: Optional[List[Tuple[Optional[float], Optional[float]]]]
     for num_sents_bucket, len_ratios_bucket in zip(zip(*shard_num_sents), zip(*shard_length_ratios)):
         if all(all(x is None for x in ratio) for ratio in len_ratios_bucket):
             length_ratio_stats_per_bucket.append((None, None))
@@ -934,8 +936,9 @@ def get_training_data_iters(sources: List[str],
                             allow_empty: bool = False,
                             batch_sentences_multiple_of: int = 1,
                             permute: bool = True,
-                            alignment: Optional[str] = None) -> Tuple['BaseParallelSampleIter', Optional['BaseParallelSampleIter'],
-                                                           'DataConfig', 'DataInfo']:
+                            alignment: Optional[str] = None) -> Tuple[
+    'BaseParallelSampleIter', Optional['BaseParallelSampleIter'],
+    'DataConfig', 'DataInfo']:
     """
     Returns data iterators for training and validation data.
 
@@ -1242,6 +1245,7 @@ class SequenceReader:
     :param add_bos: Whether to add Beginning-Of-Sentence (BOS) symbol.
     :param limit: Read limit.
     """
+
     def __init__(self,
                  path: str,
                  vocabulary: Optional[vocab.Vocab] = None,
@@ -1277,6 +1281,7 @@ class SequenceReader:
                 sequence.append(self.eos_id)
             yield sequence
 
+
 class AlignmentReader:
     """
     Reads JSON alignment lines from path and creates sequence of integer [src,trg] pairs.
@@ -1300,6 +1305,7 @@ class AlignmentReader:
                 if self.limit is not None and i == self.limit:
                     break
                 alignments = alignments.split()
+
                 def transform(align: str) -> List[int]:
                     src, trg = align.split('-')
                     return [int(src), int(trg)]
@@ -1472,38 +1478,37 @@ class AlignmentBucket:
                           start/end indices for slicing individual alignment
                           sequences from the packed tensors.
     """
-    def __init__(self, name_ids: torch.Tensor, weights: torch.Tensor, slice_indices: torch.Tensor):
-        assert name_ids.ndim == 1
-        assert weights.ndim == 1
+
+    def __init__(self, alignments: torch.Tensor, slice_indices: torch.Tensor):
+        assert alignments.ndim == 2
         assert slice_indices.ndim == 2
-        assert name_ids.shape == weights.shape
-        self.name_ids = name_ids
-        self.weights = weights
+        self.alignments = alignments
         self.slice_indices = slice_indices
 
     @staticmethod
-    def from_numpy_tuple_list(alignment_tuple_list: List[Tuple[np.ndarray, np.ndarray]]) -> 'AlignmentBucket':
+    def from_numpy_tuple_list(alignment_list: List[np.ndarray]) -> 'AlignmentBucket':
         """
         Create a bucket-level alignment object from lists of sequence-level
         alignment arrays of varying lengths. Pack the sequence-level arrays into
         bucket-level tensors and record indices for slicing individual alignment
         sequences as needed.
 
-        :param alignment_tuple_list: List of tuples containing sequence-level
-                                    alignment name IDs and weights as NumPy
-                                    arrays.
+        :param alignment_list: List of sequence-level alignment arrays of shape (N,2).
         :return: AlignmentBucket containing packed tensors and slice indices.
         """
-        if len(alignment_tuple_list) == 0:
+        if len(alignment_list) == 0:
             return AlignmentBucket(name_ids=torch.zeros(0, dtype=torch.int32),
                                    weights=torch.zeros(0, dtype=torch.float32),
                                    slice_indices=torch.zeros(0, 2, dtype=torch.int64))
-        name_ids_list, weights_list = zip(*((name_ids, weights) for name_ids, weights in alignment_tuple_list))
-        seq_lens = torch.tensor([name_ids.shape[0] for name_ids in name_ids_list], dtype=torch.int64)
-        name_ids = torch.from_numpy(np.concatenate(name_ids_list))
-        weights = torch.from_numpy(np.concatenate(weights_list))
+        #name_ids_list, weights_list = zip(*((name_ids, weights) for name_ids, weights in alignment_tuple_list))
+        seq_lens = torch.tensor([alignments.shape[0] for alignments in alignment_list], dtype=torch.int64)
         slice_indices = compute_slice_indices_from_sequence_lengths(seq_lens)
-        return AlignmentBucket(name_ids=name_ids, weights=weights, slice_indices=slice_indices)
+        # name_ids = torch.from_numpy(np.concatenate(name_ids_list))
+        # remove empy alignments as it is not possible to use np.concatenate on empty arrays
+        alignment_list = [alignment for alignment in alignment_list if 0 not in alignment.shape]
+        alignments = torch.from_numpy(np.concatenate(alignment_list))
+
+        return AlignmentBucket(alignments=alignments, slice_indices=slice_indices)
 
     def __len__(self) -> int:
         return self.slice_indices.shape[0]
@@ -1554,7 +1559,6 @@ class AlignmentBucket:
             name_ids_batch[i, 0:seq_len] = self.name_ids[_start:_end]
             weights_batch[i, 0:seq_len] = self.weights[_start:_end]
         return name_ids_batch, weights_batch
-
 
     def slice_copy(self, start: int, end: int) -> 'AlignmentBucket':
         """
@@ -1665,7 +1669,7 @@ class ParallelDataSet:
             torch.save({C.DATA_KEY_SOURCE: self.source,
                         C.DATA_KEY_TARGET: self.target,
                         C.DATA_KEY_ALIGNMENT: [alignment_bucket.as_tuple() for alignment_bucket in self.alignment]
-                                             if self.alignment is not None else None},
+                        if self.alignment is not None else None},
                        fname)
 
     @staticmethod
@@ -1690,8 +1694,9 @@ class ParallelDataSet:
                             'Please rerun data preparation with this version of Sockeye.')
             source = data[C.DATA_KEY_SOURCE]
             target = data[C.DATA_KEY_TARGET]
-            alignment = [AlignmentBucket(*alignment_bucket_tuple) for alignment_bucket_tuple in data[C.DATA_KEY_ALIGNMENT]] \
-                       if data[C.DATA_KEY_ALIGNMENT] is not None else None
+            alignment = [AlignmentBucket(*alignment_bucket_tuple) for alignment_bucket_tuple in
+                         data[C.DATA_KEY_ALIGNMENT]] \
+                if data[C.DATA_KEY_ALIGNMENT] is not None else None
         if utils.is_distributed():
             split_index = torch.distributed.get_rank()
             total_splits = torch.distributed.get_world_size()
@@ -1724,8 +1729,8 @@ class ParallelDataSet:
                       for t in target]
             if alignment is not None:
                 alignment = [m.slice_copy(math.floor(i * len(m)), math.floor(j * len(m)))
-                            if len(m) > 0 else m
-                            for m in alignment]
+                             if len(m) > 0 else m
+                             for m in alignment]
         # Sanity checks
         assert len(source) == len(target)
         for s, t in zip(source, target):
@@ -1974,13 +1979,13 @@ class BatchedRawParallelSampleIter(BaseParallelSampleIter):
             target_len = 0 if targets[0] is None else len(targets[0])
             if source_len > self.max_len_source:
                 logger.debug("Trimming source sentence {} ({} -> {})".format(self.sentno + num_read,
-                                                                            source_len,
-                                                                            self.max_len_source))
+                                                                             source_len,
+                                                                             self.max_len_source))
                 sources = [source[0: self.max_len_source] for source in sources]
             if target_len > self.max_len_target:
                 logger.debug("Trimming target sentence {} ({} -> {})".format(self.sentno + num_read,
-                                                                            target_len,
-                                                                            self.max_len_target))
+                                                                             target_len,
+                                                                             self.max_len_target))
                 targets = [target[0: self.max_len_target] for target in targets]
 
             for i, source in enumerate(sources):

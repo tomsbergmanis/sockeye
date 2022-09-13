@@ -123,6 +123,7 @@ def generate_odd_even_factors(input_path: str, output_path: str):
             factors = ("e" if digit % 2 == 0 else "o" for digit in digits)
             print(C.TOKEN_SEPARATOR.join(factors), file=fout)
 
+
 def generate_alignments(train_source_path: str, train_target_path: str, train_alignment_path: str):
     with open(train_source_path, 'r') as src_fin, open(train_target_path, 'r') as trg_fin, \
             open(train_alignment_path, 'w') as align_fout:
@@ -133,8 +134,8 @@ def generate_alignments(train_source_path: str, train_target_path: str, train_al
             trg_len = len(trg_line)
             avg_len = (src_len + trg_len) // 2
             num_alignments = random.randint(avg_len // 2, 2 * avg_len)
-            src_indices = random.choices(range(0, max(0, src_len)), k=num_alignments)
-            trg_indices = random.choices(range(0, max(0, trg_len)), k=num_alignments)
+            src_indices = random.choices(range(0, src_len), k=num_alignments)
+            trg_indices = random.choices(range(0, trg_len), k=num_alignments)
             alignment_line = " ".join([
                 "{}-{}".format(src, tgt)
                  for src, tgt in zip(src_indices, trg_indices)
