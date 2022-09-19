@@ -767,11 +767,11 @@ def create_losses(args: argparse.Namespace, all_num_classes: List[int]) -> List[
                                                   label_name=C.TARGET_LABEL_NAME,
                                                   metric_prefix="bow")
         losses.append(bow_loss)
-    if args.guided_alignmentss:
+    if args.guided_alignments:
         guided_alignment_loss = loss.AlignmentCrossEntropyLoss(name="alignment_ce",
                                                                output_name=C.ATTENTION_NAME % args.transformer_guided_alignment_layer,
                                                                head=args.transformer_guided_alignment_head,
-                                                               weight=args.guided_alignments_weight,
+                                                               weight=args.guided_alignment_weight,
                                                                label_name=C.ALIGNMENT_LABEL_NAME)
         losses.append(guided_alignment_loss)
     return losses

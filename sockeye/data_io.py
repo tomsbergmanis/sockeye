@@ -1548,10 +1548,10 @@ class AlignmentBucket:
         slice_indices = torch.index_select(self.slice_indices, 0, torch.arange(start, end))
         seq_lens = slice_indices[:, 1] - slice_indices[:, 0]
         max_seq_len = torch.max(seq_lens)
-        alignment_batch = torch.full((slice_indices.shape[0], max_seq_len), C.PAD_ID, dtype=torch.int32)  # type: ignore
+        alignment_batch = torch.full((slice_indices.shape[0], max_seq_len, 2), C.PAD_ID, dtype=torch.int32)  # type: ignore
 
         for i, ((_start, _end), seq_len) in enumerate(zip(slice_indices, seq_lens)):
-            alignment_batch[i, 0:seq_len] = self.name_ids[_start:_end]
+            alignment_batch[i, 0:seq_len] = self.alignments[_start:_end]
 
         return alignment_batch
 
@@ -1621,7 +1621,7 @@ class AlignmentBucket:
         alignments, slice_indices = self.index_select(desired_indices).as_tuple()
         # Offset by size of existing packed alignment
         slice_indices += self.alignments.shape[0]
-        return AlignmentBucket(name_ids=torch.cat((self.alignments, alignments), dim=0),
+        return AlignmentBucket(alignments=torch.cat((self.alignments, alignments), dim=0),
                                slice_indices=torch.cat((self.slice_indices, slice_indices), dim=0))
 
 

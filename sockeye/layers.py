@@ -477,8 +477,7 @@ class MultiHeadSelfAttention(MultiHeadAttentionBase, AutoregressiveLayer):
                                                                          use_separate_proj_weight=False,
                                                                          q_proj_weight=None,
                                                                          k_proj_weight=None,
-                                                                         v_proj_weight=None,
-                                                                         average_attn_weights=False)
+                                                                         v_proj_weight=None)
             return contexts, attention_weights  # dummy return
         else:  # during inference multi-head attention with interleaved key-value parameters is used
             proj = self.ff_in(inputs)
